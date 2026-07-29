@@ -1,1 +1,1 @@
-../../scripts/compiler_paths.txt
+/Users/ds/work/programming101dev/scripts/compiler_paths.txt
