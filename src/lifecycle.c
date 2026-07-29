@@ -1,0 +1,377 @@
+#include <errno.h>
+#include <p101_tool_event/lifecycle.h>
+#include <stdlib.h>
+#include <string.h>
+
+enum
+{
+    INITIAL_CAPACITY = 16
+};
+
+struct p101_tool_event_lifecycle_model
+{
+    struct p101_tool_event_lifecycle_entry   *entries;
+    size_t                                    entry_count;
+    size_t                                    entry_capacity;
+    struct p101_tool_event_lifecycle_finding *findings;
+    size_t                                    finding_count;
+    size_t                                    finding_capacity;
+    int                                       finished;
+};
+
+static char                                   *copy_text(struct p101_error *err, const char *text);
+static struct p101_tool_event_lifecycle_entry *find_latest(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, bool live_only);
+static int                                     add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record, const char *resource_id);
+static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous);
+static int release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+
+struct p101_tool_event_lifecycle_model *p101_tool_event_lifecycle_create(struct p101_error *err)
+{
+    struct p101_tool_event_lifecycle_model *model;
+
+    model = (struct p101_tool_event_lifecycle_model *)calloc(1U, sizeof(*model));
+    if(model == NULL)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+    }
+    return model;
+}
+
+void p101_tool_event_lifecycle_destroy(struct p101_tool_event_lifecycle_model **model)
+{
+    if(model == NULL || *model == NULL)
+    {
+        return;
+    }
+
+    for(size_t i = 0U; i < (*model)->entry_count; i++)
+    {
+        free((*model)->entries[i].resource_class);
+        free((*model)->entries[i].resource_id);
+        free((*model)->entries[i].acquired_function_name);
+        free((*model)->entries[i].released_function_name);
+        free((*model)->entries[i].acquired_file_name);
+        free((*model)->entries[i].released_file_name);
+    }
+    for(size_t i = 0U; i < (*model)->finding_count; i++)
+    {
+        free((*model)->findings[i].resource_class);
+        free((*model)->findings[i].resource_id);
+        free((*model)->findings[i].function_name);
+        free((*model)->findings[i].previous_function_name);
+        free((*model)->findings[i].file_name);
+        free((*model)->findings[i].previous_file_name);
+    }
+    free((*model)->entries);
+    free((*model)->findings);
+    free(*model);
+    *model = NULL;
+}
+
+int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
+{
+    int result;
+
+    if(model == NULL || record == NULL || record->record_kind != P101_TOOL_EVENT_RECORD_RESOURCE || record->resource_class == NULL || record->resource_id == NULL)
+    {
+        P101_ERROR_RAISE_CHECK(err);
+        return -1;
+    }
+
+    model->finished = 0;
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wcovered-switch-default"
+#endif
+    switch(record->resource_kind)
+    {
+        case P101_TOOL_EVENT_RESOURCE_ACQUIRE:
+        {
+            const struct p101_tool_event_lifecycle_entry *previous;
+
+            previous = find_latest(model, record->pid, record->resource_class, record->resource_id, true);
+            result   = 0;
+            if(previous != NULL)
+            {
+                result = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_DUPLICATE_ACQUIRE, record, previous);
+            }
+            if(result == 0)
+            {
+                result = add_entry(err, model, record, record->resource_id);
+            }
+            break;
+        }
+        case P101_TOOL_EVENT_RESOURCE_RELEASE:
+            result = release_entry(err, model, record);
+            break;
+        case P101_TOOL_EVENT_RESOURCE_REPLACE:
+        case P101_TOOL_EVENT_RESOURCE_TRANSFER:
+            if(record->related_id == NULL)
+            {
+                result = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, record, find_latest(model, record->pid, record->resource_class, record->resource_id, false));
+            }
+            else
+            {
+                result = release_entry(err, model, record);
+                if(result == 0)
+                {
+                    result = add_entry(err, model, record, record->related_id);
+                }
+            }
+            break;
+        default:
+            P101_ERROR_RAISE_CHECK(err);
+            result = -1;
+            break;
+    }
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
+    return result;
+}
+
+int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_event_lifecycle_model *model)
+{
+    if(model == NULL)
+    {
+        P101_ERROR_RAISE_CHECK(err);
+        return -1;
+    }
+    if(model->finished != 0)
+    {
+        return 0;
+    }
+
+    for(size_t i = 0U; i < model->entry_count; i++)
+    {
+        struct p101_tool_event_record record;
+
+        if(!model->entries[i].live)
+        {
+            continue;
+        }
+        memset(&record, 0, sizeof(record));
+        record.pid            = model->entries[i].pid;
+        record.context_id     = model->entries[i].acquired_context_id;
+        record.sequence       = model->entries[i].acquired_sequence;
+        record.resource_class = model->entries[i].resource_class;
+        record.resource_id    = model->entries[i].resource_id;
+        record.line_number    = model->entries[i].acquired_line_number;
+        record.function_name  = model->entries[i].acquired_function_name;
+        record.file_name      = model->entries[i].acquired_file_name;
+        if(add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK, &record, NULL) != 0)
+        {
+            return -1;
+        }
+    }
+    model->finished = 1;
+    return 0;
+}
+
+size_t p101_tool_event_lifecycle_entry_count(const struct p101_tool_event_lifecycle_model *model)
+{
+    return model == NULL ? 0U : model->entry_count;
+}
+
+const struct p101_tool_event_lifecycle_entry *p101_tool_event_lifecycle_entry_at(const struct p101_tool_event_lifecycle_model *model, size_t index)
+{
+    return model == NULL || index >= model->entry_count ? NULL : &model->entries[index];
+}
+
+size_t p101_tool_event_lifecycle_finding_count(const struct p101_tool_event_lifecycle_model *model)
+{
+    return model == NULL ? 0U : model->finding_count;
+}
+
+const struct p101_tool_event_lifecycle_finding *p101_tool_event_lifecycle_finding_at(const struct p101_tool_event_lifecycle_model *model, size_t index)
+{
+    return model == NULL || index >= model->finding_count ? NULL : &model->findings[index];
+}
+
+static char *copy_text(struct p101_error *err, const char *text)
+{
+    char  *copy;
+    size_t length;
+
+    length = strlen(text);
+    copy   = (char *)malloc(length + 1U);
+    if(copy == NULL)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+        return NULL;
+    }
+    memcpy(copy, text, length + 1U);
+    return copy;
+}
+
+static struct p101_tool_event_lifecycle_entry *find_latest(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, bool live_only)
+{
+    for(size_t i = model->entry_count; i > 0U; i--)
+    {
+        struct p101_tool_event_lifecycle_entry *entry;
+
+        entry = &model->entries[i - 1U];
+        if(entry->pid == pid && strcmp(entry->resource_class, resource_class) == 0 && strcmp(entry->resource_id, resource_id) == 0 && (!live_only || entry->live))
+        {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static int add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record, const char *resource_id)
+{
+    struct p101_tool_event_lifecycle_entry *entry;
+
+    if(model->entry_count == model->entry_capacity)
+    {
+        size_t                                  capacity;
+        struct p101_tool_event_lifecycle_entry *grown;
+
+        capacity = model->entry_capacity == 0U ? INITIAL_CAPACITY : model->entry_capacity * 2U;
+        grown    = (struct p101_tool_event_lifecycle_entry *)realloc(model->entries, capacity * sizeof(*grown));
+        if(grown == NULL)
+        {
+            P101_ERROR_RAISE_ERRNO(err, errno);
+            return -1;
+        }
+        model->entries        = grown;
+        model->entry_capacity = capacity;
+    }
+
+    entry = &model->entries[model->entry_count];
+    memset(entry, 0, sizeof(*entry));
+    entry->resource_class         = copy_text(err, record->resource_class);
+    entry->resource_id            = copy_text(err, resource_id);
+    entry->acquired_function_name = copy_text(err, record->function_name == NULL ? "?" : record->function_name);
+    entry->acquired_file_name     = copy_text(err, record->file_name == NULL ? "?" : record->file_name);
+    if(entry->resource_class == NULL || entry->resource_id == NULL || entry->acquired_function_name == NULL || entry->acquired_file_name == NULL)
+    {
+        free(entry->resource_class);
+        free(entry->resource_id);
+        free(entry->acquired_function_name);
+        free(entry->acquired_file_name);
+        return -1;
+    }
+    entry->pid                             = record->pid;
+    entry->acquired_context_id             = record->context_id;
+    entry->acquired_sequence               = record->sequence;
+    entry->acquired_monotonic_ns           = record->monotonic_ns;
+    entry->acquired_monotonic_ns_available = record->monotonic_ns_available != 0;
+    entry->size                            = record->size;
+    entry->acquired_line_number            = record->line_number;
+    entry->live                            = true;
+    model->entry_count++;
+    return 0;
+}
+
+static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous)
+{
+    struct p101_tool_event_lifecycle_finding *finding;
+    const char                               *resource_class;
+    const char                               *resource_id;
+    char                                     *resource_class_copy;
+    char                                     *resource_id_copy;
+    const char                               *previous_function_name;
+    const char                               *previous_file_name;
+
+    if(model->finding_count == model->finding_capacity)
+    {
+        size_t                                    capacity;
+        struct p101_tool_event_lifecycle_finding *grown;
+
+        capacity = model->finding_capacity == 0U ? INITIAL_CAPACITY : model->finding_capacity * 2U;
+        grown    = (struct p101_tool_event_lifecycle_finding *)realloc(model->findings, capacity * sizeof(*grown));
+        if(grown == NULL)
+        {
+            P101_ERROR_RAISE_ERRNO(err, errno);
+            return -1;
+        }
+        model->findings         = grown;
+        model->finding_capacity = capacity;
+    }
+
+    resource_class      = previous == NULL ? record->resource_class : previous->resource_class;
+    resource_id         = previous == NULL ? record->resource_id : previous->resource_id;
+    resource_class_copy = copy_text(err, resource_class);
+    resource_id_copy    = copy_text(err, resource_id);
+    if(resource_class_copy == NULL || resource_id_copy == NULL)
+    {
+        free(resource_class_copy);
+        free(resource_id_copy);
+        return -1;
+    }
+
+    finding                         = &model->findings[model->finding_count++];
+    finding->kind                   = kind;
+    finding->pid                    = record->pid;
+    finding->context_id             = record->context_id;
+    finding->previous_context_id    = previous == NULL ? 0U : previous->acquired_context_id;
+    finding->resource_class         = resource_class_copy;
+    finding->resource_id            = resource_id_copy;
+    finding->sequence               = record->sequence;
+    finding->previous_sequence      = 0U;
+    finding->line_number            = record->line_number;
+    finding->function_name          = copy_text(err, record->function_name == NULL ? "?" : record->function_name);
+    finding->file_name              = copy_text(err, record->file_name == NULL ? "?" : record->file_name);
+    finding->previous_line_number   = 0;
+    finding->previous_function_name = NULL;
+    finding->previous_file_name     = NULL;
+    if(previous != NULL)
+    {
+        finding->previous_sequence      = previous->released_sequence == 0U ? previous->acquired_sequence : previous->released_sequence;
+        finding->previous_context_id    = previous->released_sequence == 0U ? previous->acquired_context_id : previous->released_context_id;
+        finding->previous_line_number   = previous->released_sequence == 0U ? previous->acquired_line_number : previous->released_line_number;
+        previous_function_name          = previous->released_sequence == 0U ? previous->acquired_function_name : previous->released_function_name;
+        previous_file_name              = previous->released_sequence == 0U ? previous->acquired_file_name : previous->released_file_name;
+        finding->previous_function_name = copy_text(err, previous_function_name == NULL ? "?" : previous_function_name);
+        finding->previous_file_name     = copy_text(err, previous_file_name == NULL ? "?" : previous_file_name);
+    }
+    if(finding->function_name == NULL || finding->file_name == NULL || (previous != NULL && (finding->previous_function_name == NULL || finding->previous_file_name == NULL)))
+    {
+        free(finding->resource_class);
+        free(finding->resource_id);
+        free(finding->function_name);
+        free(finding->file_name);
+        free(finding->previous_function_name);
+        free(finding->previous_file_name);
+        memset(finding, 0, sizeof(*finding));
+        model->finding_count--;
+        return -1;
+    }
+    return 0;
+}
+
+static int release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
+{
+    struct p101_tool_event_lifecycle_entry       *entry;
+    const struct p101_tool_event_lifecycle_entry *previous;
+
+    entry = find_latest(model, record->pid, record->resource_class, record->resource_id, true);
+    if(entry != NULL)
+    {
+        char *function_name;
+        char *file_name;
+
+        function_name = copy_text(err, record->function_name == NULL ? "?" : record->function_name);
+        file_name     = copy_text(err, record->file_name == NULL ? "?" : record->file_name);
+        if(function_name == NULL || file_name == NULL)
+        {
+            free(function_name);
+            free(file_name);
+            return -1;
+        }
+        entry->live                            = false;
+        entry->released_sequence               = record->sequence;
+        entry->released_context_id             = record->context_id;
+        entry->released_monotonic_ns           = record->monotonic_ns;
+        entry->released_monotonic_ns_available = record->monotonic_ns_available != 0;
+        entry->released_line_number            = record->line_number;
+        entry->released_function_name          = function_name;
+        entry->released_file_name              = file_name;
+        return 0;
+    }
+
+    previous = find_latest(model, record->pid, record->resource_class, record->resource_id, false);
+    return add_finding(err, model, previous == NULL ? P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE : P101_TOOL_EVENT_LIFECYCLE_FINDING_DOUBLE_RELEASE, record, previous);
+}

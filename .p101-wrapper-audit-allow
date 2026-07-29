@@ -1,0 +1,35 @@
+# lib_tool_event sits below lib_env and the wrapper libraries in the dependency
+# graph. It must parse and serialize the protocol without calling back through
+# the observation layer it serves.
+src/event.c:*:ferror
+src/event.c:p101_tool_event_write:fclose
+src/event.c:p101_tool_event_write:flockfile
+src/event.c:*:fflush
+src/event.c:*:fgetc
+src/event.c:*:fprintf
+src/event.c:*:fputc
+src/event.c:*:fputs
+src/event.c:p101_tool_event_write:free
+src/event.c:p101_tool_event_write:funlockfile
+src/event.c:p101_tool_event_write:fwrite
+src/event.c:*:memset
+src/event.c:p101_tool_event_write:open_memstream
+src/event.c:*:strcmp
+src/event.c:*:strlen
+src/event.c:*:strncmp
+src/event.c:*:strtol
+src/lifecycle.c:*:calloc
+src/lifecycle.c:*:free
+src/lifecycle.c:*:malloc
+src/lifecycle.c:*:memcpy
+src/lifecycle.c:*:memset
+src/lifecycle.c:*:realloc
+src/lifecycle.c:*:strcmp
+src/lifecycle.c:*:strlen
+src/receipt.c:*:close
+src/receipt.c:*:memset
+src/receipt.c:*:open
+src/receipt.c:*:read
+src/summary.c:*:memset
+src/summary.c:p101_tool_event_parse_json_size:strchr
+src/summary.c:p101_tool_event_parse_json_size:strstr
