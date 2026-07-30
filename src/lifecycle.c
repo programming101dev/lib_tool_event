@@ -1,15 +1,21 @@
 #include <errno.h>
 #include <p101_tool_event/lifecycle.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 enum
 {
-    INITIAL_CAPACITY       = 16,
-    FD_IDENTIFIER_LENGTH   = 32,
+    INITIAL_CAPACITY     = 16,
+    FD_IDENTIFIER_LENGTH = 32,
+#ifdef P101_TOOL_EVENT_TESTING
+    MAX_LIFECYCLE_ENTRIES  = 64,
+    MAX_LIFECYCLE_FINDINGS = 64
+#else
     MAX_LIFECYCLE_ENTRIES  = 1048576,
     MAX_LIFECYCLE_FINDINGS = 1048576
+#endif
 };
 
 struct p101_tool_event_lifecycle_model
@@ -26,24 +32,96 @@ struct p101_tool_event_lifecycle_model
 static char                                   *copy_text(struct p101_error *err, const char *text);
 static struct p101_tool_event_lifecycle_entry *find_latest(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, bool live_only);
 static int                                     add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record, const char *resource_id);
-static int  add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous);
-static int  release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static int  ingest_resource(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static int  ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static int  ingest_allocation(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static int  ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static int  ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
-static void rollback_exec(struct p101_tool_event_lifecycle_model *model, long pid);
-static bool pointer_is_null_text(const char *text);
+static int   add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous);
+static int   release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static int   ingest_resource(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static int   ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static int   ingest_allocation(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static int   ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static int   ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
+static void  rollback_exec(struct p101_tool_event_lifecycle_model *model, long pid);
+static bool  pointer_is_null_text(const char *text);
+static void *lifecycle_allocate(size_t size);
+static void *lifecycle_reallocate(void *memory, size_t size);
+static int   format_fd_identifier(char *identifier, size_t size, int fd);
+
+#ifdef P101_TOOL_EVENT_TESTING
+static size_t allocations_before_failure = SIZE_MAX;
+static int    force_format_failure;
+
+void p101_tool_event_test_lifecycle_fail_allocation_after(size_t successful_allocations)
+{
+    allocations_before_failure = successful_allocations;
+}
+
+void p101_tool_event_test_lifecycle_force_format_failure(void)
+{
+    force_format_failure = 1;
+}
+
+static bool allocation_should_fail(void)
+{
+    if(allocations_before_failure == SIZE_MAX)
+    {
+        return false;
+    }
+    if(allocations_before_failure > 0U)
+    {
+        allocations_before_failure--;
+        return false;
+    }
+    allocations_before_failure = SIZE_MAX;
+    errno                      = ENOMEM;
+    return true;
+}
+#endif
+
+static void *lifecycle_allocate(size_t size)
+{
+#ifdef P101_TOOL_EVENT_TESTING
+    if(allocation_should_fail())
+    {
+        return NULL;
+    }
+#endif
+    return malloc(size);
+}
+
+static void *lifecycle_reallocate(void *memory, size_t size)
+{
+#ifdef P101_TOOL_EVENT_TESTING
+    if(allocation_should_fail())
+    {
+        return NULL;
+    }
+#endif
+    return realloc(memory, size);
+}
+
+static int format_fd_identifier(char *identifier, size_t size, int fd)
+{
+#ifdef P101_TOOL_EVENT_TESTING
+    if(force_format_failure != 0)
+    {
+        force_format_failure = 0;
+        return -1;
+    }
+#endif
+    return snprintf(identifier, size, "%d", fd);
+}
 
 struct p101_tool_event_lifecycle_model *p101_tool_event_lifecycle_create(struct p101_error *err)
 {
     struct p101_tool_event_lifecycle_model *model;
 
-    model = (struct p101_tool_event_lifecycle_model *)calloc(1U, sizeof(*model));
+    model = (struct p101_tool_event_lifecycle_model *)lifecycle_allocate(sizeof(*model));
     if(model == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
+    }
+    else
+    {
+        memset(model, 0, sizeof(*model));
     }
     return model;
 }
@@ -192,7 +270,7 @@ static int ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_mo
     struct p101_tool_event_record normalized;
     char                          identifier[FD_IDENTIFIER_LENGTH];
 
-    if(snprintf(identifier, sizeof(identifier), "%d", record->fd) < 0)
+    if(format_fd_identifier(identifier, sizeof(identifier), record->fd) < 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         return -1;
@@ -358,7 +436,7 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
     {
         return 0;
     }
-    if(snprintf(identifier, sizeof(identifier), "%d", record->fd) < 0)
+    if(format_fd_identifier(identifier, sizeof(identifier), record->fd) < 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         return -1;
@@ -472,7 +550,7 @@ static char *copy_text(struct p101_error *err, const char *text)
     size_t length;
 
     length = strlen(text);
-    copy   = (char *)malloc(length + 1U);
+    copy   = (char *)lifecycle_allocate(length + 1U);
     if(copy == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
@@ -515,12 +593,8 @@ static int add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_mo
         if(model->entry_capacity != 0U)
         {
             capacity = model->entry_capacity * 2U;
-            if(model->entry_capacity > MAX_LIFECYCLE_ENTRIES / 2U)
-            {
-                capacity = MAX_LIFECYCLE_ENTRIES;
-            }
         }
-        grown = (struct p101_tool_event_lifecycle_entry *)realloc(model->entries, capacity * sizeof(*grown));
+        grown = (struct p101_tool_event_lifecycle_entry *)lifecycle_reallocate(model->entries, capacity * sizeof(*grown));
         if(grown == NULL)
         {
             P101_ERROR_RAISE_ERRNO(err, errno);
@@ -581,12 +655,8 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
         if(model->finding_capacity != 0U)
         {
             capacity = model->finding_capacity * 2U;
-            if(model->finding_capacity > MAX_LIFECYCLE_FINDINGS / 2U)
-            {
-                capacity = MAX_LIFECYCLE_FINDINGS;
-            }
         }
-        grown = (struct p101_tool_event_lifecycle_finding *)realloc(model->findings, capacity * sizeof(*grown));
+        grown = (struct p101_tool_event_lifecycle_finding *)lifecycle_reallocate(model->findings, capacity * sizeof(*grown));
         if(grown == NULL)
         {
             P101_ERROR_RAISE_ERRNO(err, errno);
@@ -630,8 +700,8 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
         finding->previous_line_number   = previous->released_sequence == 0U ? previous->acquired_line_number : previous->released_line_number;
         previous_function_name          = previous->released_sequence == 0U ? previous->acquired_function_name : previous->released_function_name;
         previous_file_name              = previous->released_sequence == 0U ? previous->acquired_file_name : previous->released_file_name;
-        finding->previous_function_name = copy_text(err, previous_function_name == NULL ? "?" : previous_function_name);
-        finding->previous_file_name     = copy_text(err, previous_file_name == NULL ? "?" : previous_file_name);
+        finding->previous_function_name = copy_text(err, previous_function_name);
+        finding->previous_file_name     = copy_text(err, previous_file_name);
     }
     if(finding->function_name == NULL || finding->file_name == NULL || (previous != NULL && (finding->previous_function_name == NULL || finding->previous_file_name == NULL)))
     {

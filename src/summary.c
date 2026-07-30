@@ -9,7 +9,8 @@ enum
     JSON_KEY_CAPACITY  = 96,
     JSON_CONTROL_LIMIT = 32,
     JSON_TRUE_LENGTH   = 4,
-    JSON_FALSE_LENGTH  = 5
+    JSON_FALSE_LENGTH  = 5,
+    DECIMAL_MAX_DIGIT  = 9
 };
 
 struct json_cursor
@@ -28,6 +29,18 @@ static bool skip_array(struct json_cursor *cursor, size_t depth);
 static bool key_text(const char *key, char output[JSON_KEY_CAPACITY]);
 static bool find_top_level_size(const char *text, const char *wanted, size_t *value);
 static bool parse_log_health(struct json_cursor *cursor, bool *complete);
+static bool is_decimal_digit(char value);
+static bool is_hex_digit(char value);
+
+static bool is_decimal_digit(char value)
+{
+    return (unsigned int)(unsigned char)(value - '0') <= DECIMAL_MAX_DIGIT;
+}
+
+static bool is_hex_digit(char value)
+{
+    return (is_decimal_digit(value) || (strchr("abcdefABCDEF", (int)value) != NULL && value != '\0')) != 0;
+}
 
 bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *value)
 {
@@ -241,7 +254,7 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
                     char digit;
 
                     digit = *cursor->current++;
-                    if(!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') || (digit >= 'A' && digit <= 'F')))
+                    if(!is_hex_digit(digit))
                     {
                         return false;
                     }
@@ -281,7 +294,7 @@ static bool parse_size(struct json_cursor *cursor, size_t *value)
 {
     size_t parsed;
 
-    if(value == NULL || *cursor->current < '0' || *cursor->current > '9')
+    if(*cursor->current < '0' || *cursor->current > '9')
     {
         return false;
     }
@@ -367,7 +380,7 @@ static bool skip_number(struct json_cursor *cursor)
     if(*current == '0')
     {
         current++;
-        if(*current >= '0' && *current <= '9')
+        if(is_decimal_digit(*current))
         {
             return false;
         }
@@ -419,10 +432,7 @@ static bool skip_object(struct json_cursor *cursor, size_t depth)    // NOLINT(m
 {
     bool first;
 
-    if(*cursor->current++ != '{')
-    {
-        return false;
-    }
+    cursor->current++;
     first = true;
     while(true)
     {
@@ -460,10 +470,7 @@ static bool skip_array(struct json_cursor *cursor, size_t depth)    // NOLINT(mi
 {
     bool first;
 
-    if(*cursor->current++ != '[')
-    {
-        return false;
-    }
+    cursor->current++;
     first = true;
     while(true)
     {

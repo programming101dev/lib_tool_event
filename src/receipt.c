@@ -12,6 +12,34 @@ enum
 
 static const uint64_t FNV1A64_OFFSET = UINT64_C(14695981039346656037);
 
+static int close_receipt_file(int fd);
+
+#ifdef P101_TOOL_EVENT_TESTING
+static int forced_close_error;
+
+void p101_tool_event_test_force_close_error(int error_number)
+{
+    forced_close_error = error_number;
+}
+#endif
+
+static int close_receipt_file(int fd)
+{
+#ifdef P101_TOOL_EVENT_TESTING
+    if(forced_close_error != 0)
+    {
+        int error_number;
+
+        error_number       = forced_close_error;
+        forced_close_error = 0;
+        (void)close(fd);
+        errno = error_number;
+        return -1;
+    }
+#endif
+    return close(fd);
+}
+
 static uint64_t fnv1a64_multiply(uint64_t value)
 {
     /*
@@ -115,7 +143,7 @@ int p101_tool_event_fingerprint_file(struct p101_error *err, const char *path, s
         }
     }
 
-    if(close(fd) != 0 && result == 0)
+    if(close_receipt_file(fd) != 0 && result == 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         result = -1;

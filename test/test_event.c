@@ -14,8 +14,8 @@ static int failures;
 
 enum
 {
-    WRITE_THREAD_COUNT   = 4,
-    WRITES_PER_THREAD    = 250,
+    WRITE_THREAD_COUNT    = 4,
+    WRITES_PER_THREAD     = 250,
     EXPECTED_THREAD_LINES = WRITE_THREAD_COUNT * WRITES_PER_THREAD
 };
 
@@ -36,7 +36,7 @@ struct write_thread
 
 static void test_v4_call(void)
 {
-    char                     line[] = "P101CALL\t4\t42\t7\t9\t100\t200\tENTER\t12\tmain\topen\tpath=x\t-\tmain.c\n";
+    char                          line[] = "P101CALL\t4\t42\t7\t9\t100\t200\tENTER\t12\tmain\topen\tpath=x\t-\tmain.c\n";
     struct p101_tool_event_record record;
 
     EXPECT(p101_tool_event_parse_line(line, &record) == P101_TOOL_EVENT_PARSE_OK);
@@ -49,7 +49,7 @@ static void test_v4_call(void)
 
 static void test_old_version_is_rejected(void)
 {
-    char                     line[] = "P101FD\t2\t42\t9\t100\t200\tOPEN\t3\t12\tmain\tmain.c\n";
+    char                          line[] = "P101FD\t2\t42\t9\t100\t200\tOPEN\t3\t12\tmain\tmain.c\n";
     struct p101_tool_event_record record;
 
     EXPECT(p101_tool_event_parse_line(line, &record) == P101_TOOL_EVENT_PARSE_BAD_VERSION);
@@ -57,10 +57,10 @@ static void test_old_version_is_rejected(void)
 
 static void test_generic_lifecycle(void)
 {
-    char                         acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmmap\t0x1000\t-\t4096\tprivate\t12\tmain\tmain.c\n";
-    char                         release[] = "P101RESOURCE\t4\t42\t7\t2\t110\t210\tRELEASE\tmmap\t0x1000\t-\t0\t-\t13\tmain\tmain.c\n";
-    struct p101_tool_event_record     record;
-    struct p101_error           *err;
+    char                                    acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmmap\t0x1000\t-\t4096\tprivate\t12\tmain\tmain.c\n";
+    char                                    release[] = "P101RESOURCE\t4\t42\t7\t2\t110\t210\tRELEASE\tmmap\t0x1000\t-\t0\t-\t13\tmain\tmain.c\n";
+    struct p101_tool_event_record           record;
+    struct p101_error                      *err;
     struct p101_tool_event_lifecycle_model *model;
 
     err   = p101_error_create(false);
@@ -82,10 +82,10 @@ static void test_generic_lifecycle(void)
 
 static void test_lifecycle_bad_replace_has_source(void)
 {
-    char                                 acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
-    char                                 replace[] = "P101RESOURCE\t4\t42\t7\t2\t110\t210\tREPLACE\tmapping\t0x1000\t-\t8192\t-\t20\tgrow_map\tresize.c\n";
-    struct p101_tool_event_record             record;
-    struct p101_error                   *err;
+    char                                            acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
+    char                                            replace[] = "P101RESOURCE\t4\t42\t7\t2\t110\t210\tREPLACE\tmapping\t0x1000\t-\t8192\t-\t20\tgrow_map\tresize.c\n";
+    struct p101_tool_event_record                   record;
+    struct p101_error                              *err;
     struct p101_tool_event_lifecycle_model         *model;
     const struct p101_tool_event_lifecycle_finding *finding;
 
@@ -110,10 +110,10 @@ static void test_lifecycle_bad_replace_has_source(void)
 
 static void test_lifecycle_duplicate_acquire(void)
 {
-    char                                 first[]  = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
-    char                                 second[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tACQUIRE\tmapping\t0x1000\t-\t8192\t-\t20\tmap_again\tother.c\n";
-    struct p101_tool_event_record             record;
-    struct p101_error                   *err;
+    char                                            first[]  = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
+    char                                            second[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tACQUIRE\tmapping\t0x1000\t-\t8192\t-\t20\tmap_again\tother.c\n";
+    struct p101_tool_event_record                   record;
+    struct p101_error                              *err;
     struct p101_tool_event_lifecycle_model         *model;
     const struct p101_tool_event_lifecycle_finding *finding;
 
@@ -137,9 +137,9 @@ static void test_lifecycle_duplicate_acquire(void)
 
 static void test_lifecycle_leak_has_no_duplicate_previous_evidence(void)
 {
-    char                                 acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
-    struct p101_tool_event_record             record;
-    struct p101_error                   *err;
+    char                                            acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tmapping\t0x1000\t-\t4096\t-\t12\tmap_file\tmain.c\n";
+    struct p101_tool_event_record                   record;
+    struct p101_error                              *err;
     struct p101_tool_event_lifecycle_model         *model;
     const struct p101_tool_event_lifecycle_finding *finding;
 
@@ -294,13 +294,13 @@ static void test_shared_ownership_semantics(void)
     EXPECT(p101_tool_event_ownership_classify_replace(false, P101_TOOL_EVENT_OWNERSHIP_RELEASED) == P101_TOOL_EVENT_OWNERSHIP_REPLACE_BAD);
     EXPECT(p101_tool_event_ownership_exec_inherits(P101_TOOL_EVENT_OWNERSHIP_LIVE, false));
     EXPECT(!p101_tool_event_ownership_exec_inherits(P101_TOOL_EVENT_OWNERSHIP_LIVE, true));
+    EXPECT(!p101_tool_event_ownership_exec_inherits(P101_TOOL_EVENT_OWNERSHIP_RELEASED, false));
 }
 
 static void test_shared_resource_summary_parser(void)
 {
-    static const char                  json[] =
-        "{\"schema\":\"p101-resource-tracker-findings-v3\",\"records\":9,\"fd_leaks\":1,\"allocation_leaks\":2,\"bad_releases\":3,\"exec_inheritances\":4,\"generic_resource_leaks\":5,\"generic_bad_releases\":6,"
-        "\"malformed\":0,\"bad_version\":0,\"refused\":0,\"log_health\":{\"complete\":true,\"producers\":1},\"findings\":[]}";
+    static const char                       json[] = "{\"schema\":\"p101-resource-tracker-findings-v3\",\"records\":9,\"fd_leaks\":1,\"allocation_leaks\":2,\"bad_releases\":3,\"exec_inheritances\":4,\"generic_resource_leaks\":5,\"generic_bad_releases\":6,"
+                                                     "\"malformed\":0,\"bad_version\":0,\"refused\":0,\"log_health\":{\"complete\":true,\"producers\":1},\"findings\":[]}";
     struct p101_tool_event_resource_summary summary;
 
     EXPECT(p101_tool_event_parse_resource_summary_json(json, &summary));
@@ -314,10 +314,10 @@ static void test_shared_resource_summary_parser(void)
 
 static void test_lifecycle_cross_context_release(void)
 {
-    char                         acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tlock\tshared\t-\t0\t-\t12\tmain\tmain.c\n";
-    char                         release[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tRELEASE\tlock\tshared\t-\t0\t-\t13\tworker\tworker.c\n";
-    struct p101_tool_event_record     record;
-    struct p101_error           *err;
+    char                                    acquire[] = "P101RESOURCE\t4\t42\t7\t1\t100\t200\tACQUIRE\tlock\tshared\t-\t0\t-\t12\tmain\tmain.c\n";
+    char                                    release[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tRELEASE\tlock\tshared\t-\t0\t-\t13\tworker\tworker.c\n";
+    struct p101_tool_event_record           record;
+    struct p101_error                      *err;
     struct p101_tool_event_lifecycle_model *model;
 
     err   = p101_error_create(false);
@@ -337,9 +337,9 @@ static void test_lifecycle_cross_context_release(void)
 
 static void test_lifecycle_finding_owns_text(void)
 {
-    char                         release[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tRELEASE\tlock\tshared\t-\t0\t-\t13\tworker\tworker.c\n";
-    struct p101_tool_event_record     record;
-    struct p101_error           *err;
+    char                                    release[] = "P101RESOURCE\t4\t42\t8\t2\t110\t210\tRELEASE\tlock\tshared\t-\t0\t-\t13\tworker\tworker.c\n";
+    struct p101_tool_event_record           record;
+    struct p101_error                      *err;
     struct p101_tool_event_lifecycle_model *model;
 
     err   = p101_error_create(false);
@@ -357,10 +357,10 @@ static void test_lifecycle_finding_owns_text(void)
 
 static void test_write_round_trip(void)
 {
-    char                     line[P101_TOOL_EVENT_LINE_MAX_BYTES];
+    char                          line[P101_TOOL_EVENT_LINE_MAX_BYTES];
     struct p101_tool_event_record record;
     struct p101_tool_event_output written;
-    FILE                    *stream;
+    FILE                         *stream;
 
     stream = tmpfile();
     EXPECT(stream != NULL);
@@ -452,10 +452,10 @@ static void test_completion_round_trip(void)
         EXPECT(!p101_tool_event_stream_health_is_complete(&health));
 
         p101_tool_event_stream_health_destroy(&health);
-        record.version      = P101_TOOL_EVENT_LOG_VERSION;
-        record.record_kind  = P101_TOOL_EVENT_RECORD_COMPLETE;
-        record.write_failed = 0;
-        record.write_errno  = 0;
+        record.version          = P101_TOOL_EVENT_LOG_VERSION;
+        record.record_kind      = P101_TOOL_EVENT_RECORD_COMPLETE;
+        record.write_failed     = 0;
+        record.write_errno      = 0;
         record.events_attempted = 0U;
         EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
         EXPECT(p101_tool_event_stream_health_is_complete(&health));
@@ -471,8 +471,8 @@ static void test_completion_round_trip(void)
         record.context_id  = 1U;
         record.sequence    = 1U;
         EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
-        record.record_kind = P101_TOOL_EVENT_RECORD_COMPLETE;
-        record.sequence    = 2U;
+        record.record_kind      = P101_TOOL_EVENT_RECORD_COMPLETE;
+        record.sequence         = 2U;
         record.events_attempted = 1U;
         EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
 
@@ -485,8 +485,8 @@ static void test_completion_round_trip(void)
         EXPECT(p101_tool_event_stream_health_incomplete_producers(&health) == 1U);
         EXPECT(!p101_tool_event_stream_health_is_complete(&health));
 
-        record.record_kind = P101_TOOL_EVENT_RECORD_COMPLETE;
-        record.sequence    = 2U;
+        record.record_kind      = P101_TOOL_EVENT_RECORD_COMPLETE;
+        record.sequence         = 2U;
         record.events_attempted = 1U;
         EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
         EXPECT(p101_tool_event_stream_health_incomplete_producers(&health) == 0U);
@@ -534,7 +534,7 @@ static void test_completion_round_trip(void)
 
 static void *write_records(void *data)
 {
-    struct write_thread       *thread;
+    struct write_thread          *thread;
     struct p101_tool_event_output record;
 
     thread = (struct write_thread *)data;
@@ -570,12 +570,12 @@ static void *write_records(void *data)
 
 static void test_concurrent_writes_are_complete_records(void)
 {
-    char                     line[P101_TOOL_EVENT_LINE_MAX_BYTES];
-    pthread_t                threads[WRITE_THREAD_COUNT];
-    struct write_thread      contexts[WRITE_THREAD_COUNT];
+    char                          line[P101_TOOL_EVENT_LINE_MAX_BYTES];
+    pthread_t                     threads[WRITE_THREAD_COUNT];
+    struct write_thread           contexts[WRITE_THREAD_COUNT];
     struct p101_tool_event_record record;
-    FILE                    *stream;
-    size_t                   lines;
+    FILE                         *stream;
+    size_t                        lines;
 
     stream = tmpfile();
     EXPECT(stream != NULL);
@@ -609,7 +609,7 @@ static void test_concurrent_writes_are_complete_records(void)
 
 static void test_file_fingerprint(void)
 {
-    struct p101_error            *err;
+    struct p101_error                 *err;
     struct p101_tool_event_fingerprint fingerprint;
 
     err = p101_error_create(false);

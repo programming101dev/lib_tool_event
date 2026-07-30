@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <p101_tool_event/event.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -39,19 +40,57 @@ enum
     ASCII_DELETE             = 0x7F
 };
 
-static int                                     parse_long_field(const char *text, long min, long max, long *out);
-static int                                     parse_optional_size_field(const char *text, size_t *out, int *available);
-static p101_tool_event_parse_status            parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload);
-static p101_tool_event_parse_status            parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record);
-static void                                    unescape_record(struct p101_tool_event_record *record);
-static int                                     write_metadata(FILE *stream, const struct p101_tool_event_output *record);
-static int                                     write_payload(FILE *stream, const struct p101_tool_event_output *record);
-static int                                     write_field(FILE *stream, const char *text);
+static int                          parse_long_field(const char *text, long min, long max, long *out);
+static int                          parse_optional_size_field(const char *text, size_t *out, int *available);
+static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload);
+static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record);
+static void                         unescape_record(struct p101_tool_event_record *record);
+
+struct line_builder
+{
+    char   data[P101_TOOL_EVENT_LINE_MAX_BYTES + 1U];
+    size_t length;
+    int    failed;
+};
+
+static void                                    append_char(struct line_builder *builder, char value);
+static void                                    append_text(struct line_builder *builder, const char *text);
+static void                                    append_format(struct line_builder *builder, const char *format, ...);
+static void                                    append_field(struct line_builder *builder, const char *text);
+static void                                    write_metadata(struct line_builder *builder, const struct p101_tool_event_output *record);
+static void                                    write_payload(struct line_builder *builder, const struct p101_tool_event_output *record);
 static int                                     output_is_valid(const struct p101_tool_event_output *record);
 static const char                             *record_magic(p101_tool_event_record_kind kind);
 static const char                             *alloc_kind_name(p101_tool_event_alloc_kind kind);
 static const char                             *resource_kind_name(p101_tool_event_resource_kind kind);
 static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, long pid, size_t context_id);
+
+#ifdef P101_TOOL_EVENT_TESTING
+static int force_health_allocation_failure;
+static int force_zero_errno_on_read_error;
+static int force_zero_errno_on_write_error;
+static int force_format_overflow;
+
+void p101_tool_event_test_force_health_allocation_failure(void)
+{
+    force_health_allocation_failure = 1;
+}
+
+void p101_tool_event_test_force_zero_errno_on_read_error(void)
+{
+    force_zero_errno_on_read_error = 1;
+}
+
+void p101_tool_event_test_force_zero_errno_on_write_error(void)
+{
+    force_zero_errno_on_write_error = 1;
+}
+
+void p101_tool_event_test_force_format_overflow(void)
+{
+    force_format_overflow = 1;
+}
+#endif
 
 p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FILE *stream, char *line, size_t line_size)
 {
@@ -84,6 +123,13 @@ p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FI
             if(ferror(stream) != 0)
             {
                 line[length] = '\0';
+#ifdef P101_TOOL_EVENT_TESTING
+                if(force_zero_errno_on_read_error != 0)
+                {
+                    force_zero_errno_on_read_error = 0;
+                    errno                          = 0;
+                }
+#endif
                 P101_ERROR_RAISE_ERRNO(err, errno == 0 ? EIO : errno);
                 return P101_TOOL_EVENT_LINE_ERROR;
             }
@@ -150,7 +196,7 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
     record->line_number = -1;
 
     length = strlen(line);
-    while(length > 0U && (line[length - 1U] == '\n' || line[length - 1U] == '\r'))
+    while(line[length - 1U] == '\n' || line[length - 1U] == '\r')
     {
         line[--length] = '\0';
     }
@@ -162,7 +208,7 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
     {
         fields[count++] = p101_tool_event_split(&cursor);
     }
-    if(cursor != NULL || count == 0U)
+    if(cursor != NULL)
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
@@ -183,13 +229,11 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
 
 int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *record)
 {
-    char       *line;
-    FILE       *line_stream;
-    const char *magic;
-    size_t      line_size;
-    int         actual_error;
-    int         saved_error;
-    int         result;
+    struct line_builder builder;
+    const char         *magic;
+    int                 actual_error;
+    int                 saved_error;
+    int                 result;
 
     if(stream == NULL || record == NULL || !output_is_valid(record))
     {
@@ -198,68 +242,42 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
     }
 
     /*
-     * Build the protocol unit away from the destination, then publish it with
-     * one operating-system write. The destination lock protects a shared FILE
-     * object, while the single write prevents field-by-field interleaving
-     * between independent appenders.
+     * Build the complete protocol unit in a bounded private buffer, then
+     * publish it with one operating-system write. This avoids allocation in
+     * the observer path and prevents field-by-field interleaving.
      */
-    saved_error  = errno;
-    errno        = 0;
-    actual_error = 0;
-    line         = NULL;
-    line_size    = 0U;
-    line_stream  = open_memstream(&line, &line_size);
-    if(line_stream == NULL)
+    memset(&builder, 0, sizeof(builder));
+    magic = record_magic(record->record_kind);
+    append_text(&builder, magic);
+    append_char(&builder, '\t');
+    write_metadata(&builder, record);
+    write_payload(&builder, record);
+    append_char(&builder, '\n');
+    if(builder.failed != 0)
     {
-        if(errno == 0)
-        {
-            errno = EIO;
-        }
+        errno = EMSGSIZE;
         return -1;
     }
 
-    magic  = record_magic(record->record_kind);
-    result = 0;
-    if(magic == NULL || fputs(magic, line_stream) == EOF || fputc('\t', line_stream) == EOF || write_metadata(line_stream, record) != 0 || write_payload(line_stream, record) != 0 || fputc('\n', line_stream) == EOF)
-    {
-        result       = -1;
-        actual_error = errno;
-    }
-    if(fclose(line_stream) == EOF)
+    saved_error  = errno;
+    actual_error = 0;
+    result       = 0;
+    errno        = 0;
+    flockfile(stream);
+    if(fflush(stream) == EOF || write(fileno(stream), builder.data, builder.length) != (ssize_t)builder.length)
     {
         result = -1;
-        if(actual_error == 0)
+#ifdef P101_TOOL_EVENT_TESTING
+        if(force_zero_errno_on_write_error != 0)
         {
-            actual_error = errno;
+            force_zero_errno_on_write_error = 0;
+            errno                           = 0;
         }
+#endif
+        actual_error = errno == 0 ? EIO : errno;
     }
-    line_stream = NULL;
-    if(result == 0 && line_size > (size_t)P101_TOOL_EVENT_LINE_MAX_BYTES)
-    {
-        result       = -1;
-        actual_error = EMSGSIZE;
-    }
-    if(result == 0)
-    {
-        errno = 0;
-        flockfile(stream);
-        if(fflush(stream) == EOF || write(fileno(stream), line, line_size) != (ssize_t)line_size)
-        {
-            result       = -1;
-            actual_error = errno;
-        }
-        funlockfile(stream);
-    }
-    if(result == 0)
-    {
-        actual_error = saved_error;
-    }
-    else if(actual_error == 0)
-    {
-        actual_error = EIO;
-    }
-    free(line);
-    errno = actual_error;
+    funlockfile(stream);
+    errno = result == 0 ? saved_error : actual_error;
     return result;
 }
 
@@ -398,12 +416,18 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
         size_t                                  capacity;
 
         capacity = health->producer_capacity == 0U ? HEALTH_INITIAL_CAPACITY : health->producer_capacity * 2U;
-        if(capacity < health->producer_capacity || capacity > SIZE_MAX / sizeof(*health->producers))
+#ifdef P101_TOOL_EVENT_TESTING
+        if(force_health_allocation_failure != 0)
         {
-            errno = EOVERFLOW;
-            return NULL;
+            force_health_allocation_failure = 0;
+            errno                           = ENOMEM;
+            grown                           = NULL;
         }
-        grown = realloc(health->producers, capacity * sizeof(*health->producers));
+        else
+#endif
+        {
+            grown = realloc(health->producers, capacity * sizeof(*health->producers));
+        }
         if(grown == NULL)
         {
             return NULL;
@@ -553,14 +577,22 @@ static int parse_long_field(const char *text, long min, long max, long *out)
     char *end;
     long  value;
 
-    if(text == NULL || out == NULL || *text == '\0')
+    if(*text == '\0')
     {
         return 0;
     }
 
     errno = 0;
     value = strtol(text, &end, NUMBER_BASE);
-    if(errno != 0 || end == text || *end != '\0' || value < min || value > max)
+    if(end == text || *end != '\0')
+    {
+        return 0;
+    }
+    if(errno != 0)
+    {
+        return 0;
+    }
+    if(value < min || value > max)
     {
         return 0;
     }
@@ -572,10 +604,6 @@ static int parse_optional_size_field(const char *text, size_t *out, int *availab
 {
     *out       = 0U;
     *available = 0;
-    if(text == NULL)
-    {
-        return 0;
-    }
     if(strcmp(text, "-") == 0)
     {
         return 1;
@@ -619,43 +647,83 @@ static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_
     return P101_TOOL_EVENT_PARSE_OK;
 }
 
-static int write_metadata(FILE *stream, const struct p101_tool_event_output *record)
+static void append_char(struct line_builder *builder, char value)
+{
+    if(builder->failed != 0)
+    {
+        return;
+    }
+    if(builder->length >= P101_TOOL_EVENT_LINE_MAX_BYTES)
+    {
+        builder->failed = 1;
+        return;
+    }
+    builder->data[builder->length++] = value;
+    builder->data[builder->length]   = '\0';
+}
+
+static void append_text(struct line_builder *builder, const char *text)
+{
+    while(*text != '\0')
+    {
+        append_char(builder, *text++);
+    }
+}
+
+static void append_format(struct line_builder *builder, const char *format, ...)
+{
+    va_list arguments;
+    int     written;
+    size_t  available;
+
+    if(builder->failed != 0)
+    {
+        return;
+    }
+    available = sizeof(builder->data) - builder->length;
+    va_start(arguments, format);
+    written = vsnprintf(builder->data + builder->length, available, format, arguments);
+    va_end(arguments);
+#ifdef P101_TOOL_EVENT_TESTING
+    if(force_format_overflow != 0)
+    {
+        force_format_overflow = 0;
+        written               = (int)available;
+    }
+#endif
+    if((size_t)written >= available)
+    {
+        builder->failed = 1;
+        return;
+    }
+    builder->length += (size_t)written;
+}
+
+static void write_metadata(struct line_builder *builder, const struct p101_tool_event_output *record)
 {
     int version;
 
     version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
-    if(version == P101_TOOL_EVENT_LOG_VERSION)
+    append_format(builder, "%d\t%ld\t%zu\t%zu\t", version, record->pid, record->context_id, record->sequence);
+    if(record->monotonic_ns_available != 0)
     {
-        if(fprintf(stream, "%d\t%ld\t%zu\t%zu\t", version, record->pid, record->context_id, record->sequence) < 0)
-        {
-            return -1;
-        }
+        append_format(builder, "%zu\t", record->monotonic_ns);
     }
     else
     {
-        return -1;
+        append_text(builder, "-\t");
     }
-
-    if(record->monotonic_ns_available != 0)
-    {
-        if(fprintf(stream, "%zu\t", record->monotonic_ns) < 0)
-        {
-            return -1;
-        }
-    }
-    else if(fputs("-\t", stream) == EOF)
-    {
-        return -1;
-    }
-
     if(record->wall_unix_ns_available != 0)
     {
-        return fprintf(stream, "%zu\t", record->wall_unix_ns) < 0 ? -1 : 0;
+        append_format(builder, "%zu\t", record->wall_unix_ns);
     }
-    return fputs("-\t", stream) == EOF ? -1 : 0;
+    else
+    {
+        append_text(builder, "-\t");
+    }
 }
 
-static int write_payload(FILE *stream, const struct p101_tool_event_output *record)
+static void write_payload(struct line_builder *builder, const struct p101_tool_event_output *record)
 {
 #ifdef __clang__
     #pragma clang diagnostic push
@@ -664,77 +732,99 @@ static int write_payload(FILE *stream, const struct p101_tool_event_output *reco
     switch(record->record_kind)
     {
         case P101_TOOL_EVENT_RECORD_FD:
-            if(fprintf(stream, "%s\t%d\t%d\t", record->fd_kind == P101_TOOL_EVENT_FD_OPEN ? "OPEN" : "CLOSE", record->fd, record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->file_name);
+            append_format(builder, "%s\t%d\t%d\t", record->fd_kind == P101_TOOL_EVENT_FD_OPEN ? "OPEN" : "CLOSE", record->fd, record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            break;
         case P101_TOOL_EVENT_RECORD_ALLOC:
-            if(fprintf(stream, "%s\t", alloc_kind_name(record->alloc_kind)) < 0 || write_field(stream, record->ptr) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->new_ptr) != 0 ||
-               fprintf(stream, "\t%zu\t%d\t", record->size, record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->file_name);
+            append_format(builder, "%s\t", alloc_kind_name(record->alloc_kind));
+            append_field(builder, record->ptr);
+            append_char(builder, '\t');
+            append_field(builder, record->new_ptr);
+            append_format(builder, "\t%zu\t%d\t", record->size, record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            break;
         case P101_TOOL_EVENT_RECORD_FORK:
-            if(fprintf(stream, "%ld\t%d\t", record->child_pid, record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->file_name);
+            append_format(builder, "%ld\t%d\t", record->child_pid, record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            break;
         case P101_TOOL_EVENT_RECORD_SPAWN:
-            if(fprintf(stream, "%ld\t%d\t", record->child_pid, record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->file_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->target);
+            append_format(builder, "%ld\t%d\t", record->child_pid, record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            append_char(builder, '\t');
+            append_field(builder, record->target);
+            break;
         case P101_TOOL_EVENT_RECORD_EXEC:
-            if(fprintf(stream, "%d\t%d\t%d\t", record->fd, record->cloexec, record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->file_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->target);
+            append_format(builder, "%d\t%d\t%d\t", record->fd, record->cloexec, record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            append_char(builder, '\t');
+            append_field(builder, record->target);
+            break;
         case P101_TOOL_EVENT_RECORD_EXEC_FAIL:
-            if(fprintf(stream, "%d\t", record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->file_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->target);
+            append_format(builder, "%d\t", record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            append_char(builder, '\t');
+            append_field(builder, record->target);
+            break;
         case P101_TOOL_EVENT_RECORD_CALL:
-            if(fprintf(stream, "%s\t%d\t", record->call_kind == P101_TOOL_EVENT_CALL_ENTER ? "ENTER" : "EXIT", record->line_number) < 0 || write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF ||
-               write_field(stream, record->call_name) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->arguments) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->result) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->file_name);
+            append_format(builder, "%s\t%d\t", record->call_kind == P101_TOOL_EVENT_CALL_ENTER ? "ENTER" : "EXIT", record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->call_name);
+            append_char(builder, '\t');
+            append_field(builder, record->arguments);
+            append_char(builder, '\t');
+            append_field(builder, record->result);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            break;
         case P101_TOOL_EVENT_RECORD_RESOURCE:
-            if(fprintf(stream, "%s\t", resource_kind_name(record->resource_kind)) < 0 || write_field(stream, record->resource_class) != 0 || fputc('\t', stream) == EOF || write_field(stream, record->resource_id) != 0 || fputc('\t', stream) == EOF ||
-               write_field(stream, record->related_id) != 0 || fprintf(stream, "\t%zu\t", record->size) < 0 || write_field(stream, record->metadata) != 0 || fprintf(stream, "\t%d\t", record->line_number) < 0 ||
-               write_field(stream, record->function_name) != 0 || fputc('\t', stream) == EOF)
-            {
-                return -1;
-            }
-            return write_field(stream, record->file_name);
+            append_format(builder, "%s\t", resource_kind_name(record->resource_kind));
+            append_field(builder, record->resource_class);
+            append_char(builder, '\t');
+            append_field(builder, record->resource_id);
+            append_char(builder, '\t');
+            append_field(builder, record->related_id);
+            append_format(builder, "\t%zu\t", record->size);
+            append_field(builder, record->metadata);
+            append_format(builder, "\t%d\t", record->line_number);
+            append_field(builder, record->function_name);
+            append_char(builder, '\t');
+            append_field(builder, record->file_name);
+            break;
         case P101_TOOL_EVENT_RECORD_COMPLETE:
-            return fprintf(stream, "%zu\t%d\t%d", record->events_attempted, record->write_failed, record->write_errno) < 0 ? -1 : 0;
+            append_format(builder, "%zu\t%d\t%d", record->events_attempted, record->write_failed, record->write_errno);
+            break;
         default:
             break;
     }
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
-    return -1;
 }
 
-static int write_field(FILE *stream, const char *text)
+static void append_field(struct line_builder *builder, const char *text)
 {
     if(text == NULL)
     {
-        return fputc('-', stream) == EOF ? -1 : 0;
+        append_char(builder, '-');
+        return;
     }
     if(text[0] == '-' && text[1] == '\0')
     {
-        return fputs("\\-", stream) == EOF ? -1 : 0;
+        append_text(builder, "\\-");
+        return;
     }
 
     while(*text != '\0')
@@ -763,17 +853,13 @@ static int write_field(FILE *stream, const char *text)
 
         if(escaped != NULL)
         {
-            if(fputs(escaped, stream) == EOF)
-            {
-                return -1;
-            }
+            append_text(builder, escaped);
         }
-        else if(fputc((ch < ' ' || ch == ASCII_DELETE) ? '?' : (int)ch, stream) == EOF)
+        else
         {
-            return -1;
+            append_char(builder, (char)((ch < ' ' || ch == ASCII_DELETE) ? '?' : ch));
         }
     }
-    return 0;
 }
 
 static int output_is_valid(const struct p101_tool_event_output *record)
@@ -820,85 +906,42 @@ static int output_is_valid(const struct p101_tool_event_output *record)
 
 static const char *record_magic(p101_tool_event_record_kind kind)
 {
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
-    switch(kind)
-    {
-        case P101_TOOL_EVENT_RECORD_FD:
-            return "P101FD";
-        case P101_TOOL_EVENT_RECORD_ALLOC:
-            return "P101ALLOC";
-        case P101_TOOL_EVENT_RECORD_FORK:
-            return "P101FORK";
-        case P101_TOOL_EVENT_RECORD_SPAWN:
-            return "P101SPAWN";
-        case P101_TOOL_EVENT_RECORD_EXEC:
-            return "P101EXEC";
-        case P101_TOOL_EVENT_RECORD_EXEC_FAIL:
-            return "P101EXECFAIL";
-        case P101_TOOL_EVENT_RECORD_CALL:
-            return "P101CALL";
-        case P101_TOOL_EVENT_RECORD_RESOURCE:
-            return "P101RESOURCE";
-        case P101_TOOL_EVENT_RECORD_COMPLETE:
-            return "P101COMPLETE";
-        default:
-            break;
-    }
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
-    return NULL;
+    static const char *const names[] = {
+        [P101_TOOL_EVENT_RECORD_FD]        = "P101FD",
+        [P101_TOOL_EVENT_RECORD_ALLOC]     = "P101ALLOC",
+        [P101_TOOL_EVENT_RECORD_FORK]      = "P101FORK",
+        [P101_TOOL_EVENT_RECORD_SPAWN]     = "P101SPAWN",
+        [P101_TOOL_EVENT_RECORD_EXEC]      = "P101EXEC",
+        [P101_TOOL_EVENT_RECORD_EXEC_FAIL] = "P101EXECFAIL",
+        [P101_TOOL_EVENT_RECORD_CALL]      = "P101CALL",
+        [P101_TOOL_EVENT_RECORD_RESOURCE]  = "P101RESOURCE",
+        [P101_TOOL_EVENT_RECORD_COMPLETE]  = "P101COMPLETE",
+    };
+
+    return names[kind];
 }
 
 static const char *alloc_kind_name(p101_tool_event_alloc_kind kind)
 {
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
-    switch(kind)
-    {
-        case P101_TOOL_EVENT_ALLOC_ALLOC:
-            return "ALLOC";
-        case P101_TOOL_EVENT_ALLOC_FREE:
-            return "FREE";
-        case P101_TOOL_EVENT_ALLOC_REALLOC:
-            return "REALLOC";
-        default:
-            break;
-    }
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
-    return "UNKNOWN";
+    static const char *const names[] = {
+        [P101_TOOL_EVENT_ALLOC_ALLOC]   = "ALLOC",
+        [P101_TOOL_EVENT_ALLOC_FREE]    = "FREE",
+        [P101_TOOL_EVENT_ALLOC_REALLOC] = "REALLOC",
+    };
+
+    return names[kind];
 }
 
 static const char *resource_kind_name(p101_tool_event_resource_kind kind)
 {
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
-    switch(kind)
-    {
-        case P101_TOOL_EVENT_RESOURCE_ACQUIRE:
-            return "ACQUIRE";
-        case P101_TOOL_EVENT_RESOURCE_RELEASE:
-            return "RELEASE";
-        case P101_TOOL_EVENT_RESOURCE_REPLACE:
-            return "REPLACE";
-        case P101_TOOL_EVENT_RESOURCE_TRANSFER:
-            return "TRANSFER";
-        default:
-            break;
-    }
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
-    return "UNKNOWN";
+    static const char *const names[] = {
+        [P101_TOOL_EVENT_RESOURCE_ACQUIRE]  = "ACQUIRE",
+        [P101_TOOL_EVENT_RESOURCE_RELEASE]  = "RELEASE",
+        [P101_TOOL_EVENT_RESOURCE_REPLACE]  = "REPLACE",
+        [P101_TOOL_EVENT_RESOURCE_TRANSFER] = "TRANSFER",
+    };
+
+    return names[kind];
 }
 
 static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record)
@@ -1104,7 +1147,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
 
     if(strcmp(magic, "P101COMPLETE") == 0)
     {
-        if(record->version != P101_TOOL_EVENT_LOG_VERSION || count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_tool_event_parse_size_field(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
+        if(count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_tool_event_parse_size_field(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
         {
             return P101_TOOL_EVENT_PARSE_MALFORMED;
         }
@@ -1140,3 +1183,25 @@ static void unescape_record(struct p101_tool_event_record *record)
     p101_tool_event_unescape_field(record->result);
     p101_tool_event_unescape_field(record->file_name);
 }
+
+#ifdef P101_TOOL_EVENT_TESTING
+p101_tool_event_parse_status p101_tool_event_test_parse_unknown_payload(void)
+{
+    struct p101_tool_event_record record;
+    char                         *fields[1] = {NULL};
+
+    memset(&record, 0, sizeof(record));
+    return parse_payload("P101UNKNOWN", fields, 0U, 0U, &record);
+}
+
+void p101_tool_event_test_write_unknown_payload(void)
+{
+    struct line_builder           builder;
+    struct p101_tool_event_output record;
+
+    memset(&builder, 0, sizeof(builder));
+    memset(&record, 0, sizeof(record));
+    record.record_kind = (p101_tool_event_record_kind)99;
+    write_payload(&builder, &record);
+}
+#endif
