@@ -21,30 +21,33 @@ extern "C"
 
     struct p101_tool_event_lifecycle_entry
     {
-        long   pid;
-        size_t acquired_context_id;
-        size_t released_context_id;
-        char  *resource_class;
-        char  *resource_id;
-        size_t acquired_sequence;
-        size_t released_sequence;
-        size_t acquired_monotonic_ns;
-        size_t released_monotonic_ns;
-        size_t size;
-        int    acquired_line_number;
-        int    released_line_number;
-        char  *acquired_function_name;
-        char  *released_function_name;
-        char  *acquired_file_name;
-        char  *released_file_name;
-        bool   acquired_monotonic_ns_available;
-        bool   released_monotonic_ns_available;
-        bool   live;
+        long                        pid;
+        p101_tool_event_record_kind origin_kind;
+        size_t                      acquired_context_id;
+        size_t                      released_context_id;
+        char                       *resource_class;
+        char                       *resource_id;
+        size_t                      acquired_sequence;
+        size_t                      released_sequence;
+        size_t                      acquired_monotonic_ns;
+        size_t                      released_monotonic_ns;
+        size_t                      size;
+        int                         acquired_line_number;
+        int                         released_line_number;
+        char                       *acquired_function_name;
+        char                       *released_function_name;
+        char                       *acquired_file_name;
+        char                       *released_file_name;
+        bool                        acquired_monotonic_ns_available;
+        bool                        released_monotonic_ns_available;
+        bool                        live;
+        bool                        exec_pending;
     };
 
     struct p101_tool_event_lifecycle_finding
     {
         p101_tool_event_lifecycle_finding_kind kind;
+        p101_tool_event_record_kind            origin_kind;
         long                                   pid;
         size_t                                 context_id;
         size_t                                 previous_context_id;

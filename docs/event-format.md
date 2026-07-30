@@ -1,20 +1,20 @@
-# p101 event format v3
+# p101 event format v4
 
 The p101 runtime event protocol is a line-oriented, tab-separated teaching
 format. It is deliberately readable with ordinary text tools while
 `lib_tool_event` supplies the authoritative bounded reader, serializer, parser, and
 policy-free lifecycle replay.
 
-Each v3 record starts with:
+Each v4 record starts with:
 
 ```text
-MAGIC<TAB>3<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-unix-ns<TAB>...
+MAGIC<TAB>4<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-unix-ns<TAB>...
 ```
 
 `context` distinguishes independent observation contexts in one process.
 Sequence numbers are monotonic within a context. A timestamp is `-` when the
-producer cannot provide it. The parser also accepts v2 records, assigning them
-context zero; v1 is not supported.
+producer cannot provide it. Version 4 is the only supported protocol version;
+all other versions are rejected.
 
 Text fields escape backslash, tab, newline, and carriage return as `\\`, `\t`,
 `\n`, and `\r`. A physical line, including its terminator, may not exceed
@@ -32,9 +32,10 @@ P101EXEC      ... fd cloexec line function file target
 P101EXECFAIL  ... line function file target
 P101CALL      ... ENTER|EXIT line function call args result file
 P101RESOURCE  ... ACQUIRE|RELEASE|REPLACE|TRANSFER class id related-id size metadata line function file
+P101COMPLETE  ... events-attempted write-failed write-errno
 ```
 
-The ellipsis is the common v3 prefix shown above. Optional text values are `-`.
+The ellipsis is the common v4 prefix shown above. Optional text values are `-`.
 Pointer and generic resource identities are opaque strings. POSIX spawn file
 actions are opaque, so consumers must not infer a fork-equivalent descriptor
 table from a spawn record. An exec wrapper emits descriptor snapshots before
@@ -47,12 +48,37 @@ identifies the domain, `id` identifies a resource within a PID,
 Context records where an operation happened and may change across a transfer.
 Tools decide which resource classes and findings matter to their users.
 
+`P101COMPLETE` is the producer's end-of-stream receipt for one observation
+context. `events-attempted` excludes the completion record itself.
+`write-failed` is zero or one, and `write-errno` is zero unless a prior event
+write failed. A v4 stream without a completion record is incomplete evidence,
+not evidence of a clean run. Abrupt termination can legitimately prevent this
+record; consumers must report that limitation rather than silently accepting
+the prefix they happened to read.
+
+Completeness is evaluated independently for every `(pid, context)` producer
+observed in a stream. Every producer must emit exactly one clean completion
+record. A receipt from one context cannot make a truncated sibling context look
+complete. Records after a context's completion, duplicate/non-monotonic
+sequences, and a completion count that disagrees with the number of observed
+records are stream-integrity failures. Sequence gaps are allowed because one
+context sequence is shared across filtered resource and call streams.
+
+`lib_env` serializes sequence assignment and publication for one environment,
+and `p101_tool_event_write()` publishes a complete bounded record with one
+append write. This prevents threads sharing an environment from interleaving a
+record or reversing its sequence order. After `fork()`, the p101 fork wrapper
+resets the child's inherited emission lock; the child must still obey the usual
+POSIX async-signal-safe restrictions until `exec()` or `_Exit()`.
+
 ## API and ownership
 
 - `p101_tool_event_read_line()` performs byte-safe physical-line input.
 - `p101_tool_event_parse_line()` validates and parses in place; string fields point
   into the caller-owned mutable line until that line is reused.
 - `p101_tool_event_write()` performs authoritative escaping and serialization.
+- `p101_tool_event_stream_health_*()` recognizes completion receipts without
+  imposing a consumer's exit-status or severity policy.
 - `p101_tool_event_fingerprint_file()` computes the bounded, non-cryptographic file
   fingerprint used by run receipts without changing the event records.
 - `p101_tool_event_lifecycle_*()` copies identities it retains and replays generic

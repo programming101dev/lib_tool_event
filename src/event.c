@@ -5,14 +5,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 enum
 {
     NUMBER_BASE              = 10,
     MAX_FIELDS               = 20,
     EVENT_FD_MAX             = 1048576,
-    METADATA_V2_FIELDS       = 5,
-    METADATA_V3_FIELDS       = 6,
+    METADATA_FIELDS          = 6,
+    CONTEXT_INDEX            = 2,
+    SEQUENCE_INDEX           = 3,
+    MONOTONIC_INDEX          = 4,
+    WALL_INDEX               = 5,
     FD_PAYLOAD_FIELDS        = 5,
     ALLOC_PAYLOAD_FIELDS     = 7,
     FORK_PAYLOAD_FIELDS      = 4,
@@ -21,6 +25,7 @@ enum
     EXEC_FAIL_PAYLOAD_FIELDS = 4,
     CALL_PAYLOAD_FIELDS      = 7,
     RESOURCE_PAYLOAD_FIELDS  = 9,
+    COMPLETE_PAYLOAD_FIELDS  = 3,
     ALLOC_FUNCTION_INDEX     = 5,
     ALLOC_FILE_INDEX         = 6,
     EXEC_TARGET_INDEX        = 5,
@@ -30,21 +35,23 @@ enum
     RESOURCE_LINE_INDEX      = 6,
     RESOURCE_FUNCTION_INDEX  = 7,
     RESOURCE_FILE_INDEX      = 8,
+    HEALTH_INITIAL_CAPACITY  = 8,
     ASCII_DELETE             = 0x7F
 };
 
-static int                          parse_long_field(const char *text, long min, long max, long *out);
-static int                          parse_optional_size_field(const char *text, size_t *out, int *available);
-static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload);
-static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record);
-static void                         unescape_record(struct p101_tool_event_record *record);
-static int                          write_metadata(FILE *stream, const struct p101_tool_event_output *record);
-static int                          write_payload(FILE *stream, const struct p101_tool_event_output *record);
-static int                          write_field(FILE *stream, const char *text);
-static int                          output_is_valid(const struct p101_tool_event_output *record);
-static const char                  *record_magic(p101_tool_event_record_kind kind);
-static const char                  *alloc_kind_name(p101_tool_event_alloc_kind kind);
-static const char                  *resource_kind_name(p101_tool_event_resource_kind kind);
+static int                                     parse_long_field(const char *text, long min, long max, long *out);
+static int                                     parse_optional_size_field(const char *text, size_t *out, int *available);
+static p101_tool_event_parse_status            parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload);
+static p101_tool_event_parse_status            parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record);
+static void                                    unescape_record(struct p101_tool_event_record *record);
+static int                                     write_metadata(FILE *stream, const struct p101_tool_event_output *record);
+static int                                     write_payload(FILE *stream, const struct p101_tool_event_output *record);
+static int                                     write_field(FILE *stream, const char *text);
+static int                                     output_is_valid(const struct p101_tool_event_output *record);
+static const char                             *record_magic(p101_tool_event_record_kind kind);
+static const char                             *alloc_kind_name(p101_tool_event_alloc_kind kind);
+static const char                             *resource_kind_name(p101_tool_event_resource_kind kind);
+static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, long pid, size_t context_id);
 
 p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FILE *stream, char *line, size_t line_size)
 {
@@ -192,9 +199,9 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
 
     /*
      * Build the protocol unit away from the destination, then publish it with
-     * one stdio write. The destination lock protects shared FILE objects; the
-     * single write also avoids field-by-field interleaving when independent
-     * streams append to the same pipe or regular file.
+     * one operating-system write. The destination lock protects a shared FILE
+     * object, while the single write prevents field-by-field interleaving
+     * between independent appenders.
      */
     saved_error  = errno;
     errno        = 0;
@@ -227,11 +234,16 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
         }
     }
     line_stream = NULL;
+    if(result == 0 && line_size > (size_t)P101_TOOL_EVENT_LINE_MAX_BYTES)
+    {
+        result       = -1;
+        actual_error = EMSGSIZE;
+    }
     if(result == 0)
     {
         errno = 0;
         flockfile(stream);
-        if(fwrite(line, 1U, line_size, stream) != line_size || fflush(stream) == EOF)
+        if(fflush(stream) == EOF || write(fileno(stream), line, line_size) != (ssize_t)line_size)
         {
             result       = -1;
             actual_error = errno;
@@ -253,7 +265,7 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
 
 int p101_tool_event_line_is_ours(const char *line)
 {
-    static const char *const prefixes[] = {"P101FD\t", "P101ALLOC\t", "P101FORK\t", "P101SPAWN\t", "P101EXEC\t", "P101EXECFAIL\t", "P101CALL\t", "P101RESOURCE\t"};
+    static const char *const prefixes[] = {"P101FD\t", "P101ALLOC\t", "P101FORK\t", "P101SPAWN\t", "P101EXEC\t", "P101EXECFAIL\t", "P101CALL\t", "P101RESOURCE\t", "P101COMPLETE\t"};
 
     if(line == NULL)
     {
@@ -268,6 +280,143 @@ int p101_tool_event_line_is_ours(const char *line)
         }
     }
     return 0;
+}
+
+int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *health, const struct p101_tool_event_record *record)
+{
+    struct p101_tool_event_producer_health *producer;
+
+    if(health == NULL || record == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    producer = find_or_add_producer(health, record->pid, record->context_id);
+    if(producer == NULL)
+    {
+        health->allocation_failed = 1;
+        return -1;
+    }
+
+    health->records_observed++;
+    producer->records_observed++;
+    if(producer->completion_records > 0U)
+    {
+        producer->records_after_completion++;
+        health->records_after_completion++;
+    }
+    if(record->sequence != 0U && record->sequence == producer->last_sequence)
+    {
+        producer->duplicate_sequences++;
+        health->duplicate_sequences++;
+    }
+    else if(record->sequence != 0U && producer->last_sequence != 0U && record->sequence < producer->last_sequence)
+    {
+        producer->nonmonotonic_sequences++;
+        health->nonmonotonic_sequences++;
+    }
+    if(record->sequence > producer->last_sequence)
+    {
+        producer->last_sequence = record->sequence;
+    }
+    if(record->record_kind != P101_TOOL_EVENT_RECORD_COMPLETE)
+    {
+        return 0;
+    }
+
+    health->completion_records++;
+    producer->completion_records++;
+    if(record->events_attempted != producer->records_observed - producer->completion_records)
+    {
+        producer->attempted_count_mismatches++;
+        health->attempted_count_mismatches++;
+    }
+    if(record->write_failed != 0)
+    {
+        health->producer_write_failures++;
+        health->last_write_errno = record->write_errno;
+        producer->write_failed   = 1;
+        producer->write_errno    = record->write_errno;
+    }
+    return 0;
+}
+
+int p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health)
+{
+    return health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U && health->attempted_count_mismatches == 0U &&
+           health->records_after_completion == 0U && health->allocation_failed == 0 && p101_tool_event_stream_health_incomplete_producers(health) == 0U;
+}
+
+size_t p101_tool_event_stream_health_incomplete_producers(const struct p101_tool_event_stream_health *health)
+{
+    size_t incomplete;
+
+    if(health == NULL)
+    {
+        return 0U;
+    }
+
+    incomplete = 0U;
+    for(size_t index = 0U; index < health->producer_count; index++)
+    {
+        const struct p101_tool_event_producer_health *producer;
+
+        producer = &health->producers[index];
+        if(producer->completion_records != 1U || producer->write_failed != 0 || producer->attempted_count_mismatches != 0U)
+        {
+            incomplete++;
+        }
+    }
+    return incomplete;
+}
+
+void p101_tool_event_stream_health_destroy(struct p101_tool_event_stream_health *health)
+{
+    if(health == NULL)
+    {
+        return;
+    }
+
+    free(health->producers);
+    memset(health, 0, sizeof(*health));
+}
+
+static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, long pid, size_t context_id)
+{
+    for(size_t index = 0U; index < health->producer_count; index++)
+    {
+        if(health->producers[index].pid == pid && health->producers[index].context_id == context_id)
+        {
+            return &health->producers[index];
+        }
+    }
+
+    if(health->producer_count == health->producer_capacity)
+    {
+        struct p101_tool_event_producer_health *grown;
+        size_t                                  capacity;
+
+        capacity = health->producer_capacity == 0U ? HEALTH_INITIAL_CAPACITY : health->producer_capacity * 2U;
+        if(capacity < health->producer_capacity || capacity > SIZE_MAX / sizeof(*health->producers))
+        {
+            errno = EOVERFLOW;
+            return NULL;
+        }
+        grown = realloc(health->producers, capacity * sizeof(*health->producers));
+        if(grown == NULL)
+        {
+            return NULL;
+        }
+        health->producers         = grown;
+        health->producer_capacity = capacity;
+    }
+
+    memset(&health->producers[health->producer_count], 0, sizeof(*health->producers));
+    health->producers[health->producer_count].pid        = pid;
+    health->producers[health->producer_count].context_id = context_id;
+    health->producer_count++;
+    return &health->producers[health->producer_count - 1U];
 }
 
 const char *p101_tool_event_parse_status_name(p101_tool_event_parse_status status)
@@ -441,17 +590,13 @@ static int parse_optional_size_field(const char *text, size_t *out, int *availab
 
 static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload)
 {
-    long   version;
-    size_t sequence_index;
-    size_t monotonic_index;
-    size_t wall_index;
-
-    if(field_count < METADATA_V2_FIELDS || !parse_long_field(fields[0], 0, LONG_MAX, &version))
+    long version;
+    if(field_count < METADATA_FIELDS || !parse_long_field(fields[0], 0, LONG_MAX, &version))
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
 
-    if(version != P101_TOOL_EVENT_LOG_VERSION_2 && version != P101_TOOL_EVENT_LOG_VERSION_3)
+    if(version != P101_TOOL_EVENT_LOG_VERSION)
     {
         return P101_TOOL_EVENT_PARSE_BAD_VERSION;
     }
@@ -461,32 +606,13 @@ static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
 
-    if(version == P101_TOOL_EVENT_LOG_VERSION_3)
+    if(!p101_tool_event_parse_size_field(fields[CONTEXT_INDEX], &record->context_id))
     {
-        if(field_count < METADATA_V3_FIELDS)
-        {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
-        }
-        sequence_index  = 3U;
-        monotonic_index = 4U;
-        wall_index      = METADATA_V2_FIELDS;
-        *payload        = METADATA_V3_FIELDS;
-        if(!p101_tool_event_parse_size_field(fields[2U], &record->context_id))
-        {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
-        }
+        return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
-    else
-    {
-        record->context_id = 0U;
-        sequence_index     = 2U;
-        monotonic_index    = 3U;
-        wall_index         = 4U;
-        *payload           = METADATA_V2_FIELDS;
-    }
-
-    if(!p101_tool_event_parse_size_field(fields[sequence_index], &record->sequence) || !parse_optional_size_field(fields[monotonic_index], &record->monotonic_ns, &record->monotonic_ns_available) ||
-       !parse_optional_size_field(fields[wall_index], &record->wall_unix_ns, &record->wall_unix_ns_available))
+    *payload = METADATA_FIELDS;
+    if(!p101_tool_event_parse_size_field(fields[SEQUENCE_INDEX], &record->sequence) || !parse_optional_size_field(fields[MONOTONIC_INDEX], &record->monotonic_ns, &record->monotonic_ns_available) ||
+       !parse_optional_size_field(fields[WALL_INDEX], &record->wall_unix_ns, &record->wall_unix_ns_available))
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
@@ -498,16 +624,9 @@ static int write_metadata(FILE *stream, const struct p101_tool_event_output *rec
     int version;
 
     version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
-    if(version == P101_TOOL_EVENT_LOG_VERSION_3)
+    if(version == P101_TOOL_EVENT_LOG_VERSION)
     {
         if(fprintf(stream, "%d\t%ld\t%zu\t%zu\t", version, record->pid, record->context_id, record->sequence) < 0)
-        {
-            return -1;
-        }
-    }
-    else if(version == P101_TOOL_EVENT_LOG_VERSION_2)
-    {
-        if(fprintf(stream, "%d\t%ld\t%zu\t", version, record->pid, record->sequence) < 0)
         {
             return -1;
         }
@@ -596,6 +715,8 @@ static int write_payload(FILE *stream, const struct p101_tool_event_output *reco
                 return -1;
             }
             return write_field(stream, record->file_name);
+        case P101_TOOL_EVENT_RECORD_COMPLETE:
+            return fprintf(stream, "%zu\t%d\t%d", record->events_attempted, record->write_failed, record->write_errno) < 0 ? -1 : 0;
         default:
             break;
     }
@@ -657,6 +778,13 @@ static int write_field(FILE *stream, const char *text)
 
 static int output_is_valid(const struct p101_tool_event_output *record)
 {
+    int version;
+
+    version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
+    if(version != P101_TOOL_EVENT_LOG_VERSION || record->pid < 0 || (record->monotonic_ns_available != 0 && record->monotonic_ns_available != 1) || (record->wall_unix_ns_available != 0 && record->wall_unix_ns_available != 1))
+    {
+        return 0;
+    }
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
@@ -664,19 +792,23 @@ static int output_is_valid(const struct p101_tool_event_output *record)
     switch(record->record_kind)
     {
         case P101_TOOL_EVENT_RECORD_FD:
-            return record->fd_kind == P101_TOOL_EVENT_FD_OPEN || record->fd_kind == P101_TOOL_EVENT_FD_CLOSE;
+            return record->fd >= 0 && record->fd <= EVENT_FD_MAX && record->line_number >= 0 && (record->fd_kind == P101_TOOL_EVENT_FD_OPEN || record->fd_kind == P101_TOOL_EVENT_FD_CLOSE);
         case P101_TOOL_EVENT_RECORD_ALLOC:
-            return record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE || record->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC;
+            return record->line_number >= 0 && (record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE || record->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC);
         case P101_TOOL_EVENT_RECORD_CALL:
-            return record->call_kind == P101_TOOL_EVENT_CALL_ENTER || record->call_kind == P101_TOOL_EVENT_CALL_EXIT;
+            return record->line_number >= 0 && (record->call_kind == P101_TOOL_EVENT_CALL_ENTER || record->call_kind == P101_TOOL_EVENT_CALL_EXIT);
         case P101_TOOL_EVENT_RECORD_RESOURCE:
-            return record->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE ||
-                   record->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER;
+            return record->line_number >= 0 && (record->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE ||
+                                                record->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER);
         case P101_TOOL_EVENT_RECORD_FORK:
         case P101_TOOL_EVENT_RECORD_SPAWN:
+            return record->child_pid >= 0 && record->line_number >= 0;
         case P101_TOOL_EVENT_RECORD_EXEC:
+            return record->fd >= 0 && record->fd <= EVENT_FD_MAX && (record->cloexec == 0 || record->cloexec == 1) && record->line_number >= 0;
         case P101_TOOL_EVENT_RECORD_EXEC_FAIL:
-            return 1;
+            return record->line_number >= 0;
+        case P101_TOOL_EVENT_RECORD_COMPLETE:
+            return (record->write_failed == 0 || record->write_failed == 1) && ((record->write_failed == 0 && record->write_errno == 0) || (record->write_failed == 1 && record->write_errno > 0));
         default:
             break;
     }
@@ -710,6 +842,8 @@ static const char *record_magic(p101_tool_event_record_kind kind)
             return "P101CALL";
         case P101_TOOL_EVENT_RECORD_RESOURCE:
             return "P101RESOURCE";
+        case P101_TOOL_EVENT_RECORD_COMPLETE:
+            return "P101COMPLETE";
         default:
             break;
     }
@@ -965,6 +1099,26 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         record->function_name = fields[payload + RESOURCE_FUNCTION_INDEX];
         record->file_name     = fields[payload + RESOURCE_FILE_INDEX];
         record->record_kind   = P101_TOOL_EVENT_RECORD_RESOURCE;
+        return P101_TOOL_EVENT_PARSE_OK;
+    }
+
+    if(strcmp(magic, "P101COMPLETE") == 0)
+    {
+        if(record->version != P101_TOOL_EVENT_LOG_VERSION || count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_tool_event_parse_size_field(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
+        {
+            return P101_TOOL_EVENT_PARSE_MALFORMED;
+        }
+        record->write_failed = (int)value;
+        if(!parse_long_field(fields[payload + 2U], 0, INT_MAX, &value))
+        {
+            return P101_TOOL_EVENT_PARSE_MALFORMED;
+        }
+        record->write_errno = (int)value;
+        if((record->write_failed == 0 && record->write_errno != 0) || (record->write_failed != 0 && record->write_errno == 0))
+        {
+            return P101_TOOL_EVENT_PARSE_MALFORMED;
+        }
+        record->record_kind = P101_TOOL_EVENT_RECORD_COMPLETE;
         return P101_TOOL_EVENT_PARSE_OK;
     }
 

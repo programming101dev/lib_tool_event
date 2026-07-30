@@ -10,6 +10,8 @@ src/event.c:*:fprintf
 src/event.c:*:fputc
 src/event.c:*:fputs
 src/event.c:p101_tool_event_write:free
+src/event.c:p101_tool_event_stream_health_destroy:free
+src/event.c:find_or_add_producer:realloc
 src/event.c:p101_tool_event_write:funlockfile
 src/event.c:p101_tool_event_write:fwrite
 src/event.c:*:memset
@@ -24,6 +26,8 @@ src/lifecycle.c:*:malloc
 src/lifecycle.c:*:memcpy
 src/lifecycle.c:*:memset
 src/lifecycle.c:*:realloc
+src/lifecycle.c:ingest_fd:snprintf
+src/lifecycle.c:ingest_exec:snprintf
 src/lifecycle.c:*:strcmp
 src/lifecycle.c:*:strlen
 src/receipt.c:*:close

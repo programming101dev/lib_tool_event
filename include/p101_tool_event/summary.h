@@ -21,6 +21,7 @@ extern "C"
         size_t malformed;
         size_t bad_version;
         size_t refused;
+        bool   log_complete;
         bool   parsed;
     };
 
