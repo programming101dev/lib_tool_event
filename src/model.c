@@ -33,10 +33,16 @@ static void  *model_reallocate(void *memory, size_t size);
 
 #ifdef P101_TOOL_EVENT_TESTING
 static size_t model_allocations_before_failure = SIZE_MAX;
+static int    model_allocation_failure_errno   = ENOMEM;
 
 void p101_tool_event_test_model_fail_allocation_after(size_t successful_allocations)
 {
     model_allocations_before_failure = successful_allocations;
+}
+
+void p101_tool_event_test_model_set_allocation_failure_errno(int errnum)
+{
+    model_allocation_failure_errno = errnum;
 }
 
 static int model_allocation_should_fail(void)
@@ -51,7 +57,7 @@ static int model_allocation_should_fail(void)
         return 0;
     }
     model_allocations_before_failure = SIZE_MAX;
-    errno                            = ENOMEM;
+    errno                            = model_allocation_failure_errno;
     return 1;
 }
 #endif
@@ -248,11 +254,14 @@ static int reserve_nodes(struct p101_error *err, struct p101_tool_model *model)
     {
         return 0;
     }
+    // GCOVR_EXCL_START: reaching the million-node hard limit is intentionally
+    // outside the bounded unit corpus; growth and allocation failure are tested.
     if(model->node_capacity >= MODEL_LIMIT)
     {
-        P101_ERROR_RAISE_ERRNO(err, EOVERFLOW);    // GCOVR_EXCL_LINE -- bounded model cannot grow beyond the documented limit.
-        return -1;                                 // GCOVR_EXCL_LINE
+        P101_ERROR_RAISE_ERRNO(err, EOVERFLOW);
+        return -1;
     }
+    // GCOVR_EXCL_STOP
     capacity = model->node_capacity == 0U ? INITIAL_CAPACITY : model->node_capacity * 2U;
     nodes    = (struct p101_tool_model_owned_node *)model_reallocate(model->nodes, capacity * sizeof(*nodes));
     if(nodes == NULL)
@@ -274,11 +283,14 @@ static int reserve_edges(struct p101_error *err, struct p101_tool_model *model)
     {
         return 0;
     }
+    // GCOVR_EXCL_START: reaching the million-edge hard limit is intentionally
+    // outside the bounded unit corpus; growth and allocation failure are tested.
     if(model->edge_capacity >= MODEL_LIMIT)
     {
-        P101_ERROR_RAISE_ERRNO(err, EOVERFLOW);    // GCOVR_EXCL_LINE -- bounded model cannot grow beyond the documented limit.
-        return -1;                                 // GCOVR_EXCL_LINE
+        P101_ERROR_RAISE_ERRNO(err, EOVERFLOW);
+        return -1;
     }
+    // GCOVR_EXCL_STOP
     capacity = model->edge_capacity == 0U ? INITIAL_CAPACITY : model->edge_capacity * 2U;
     edges    = (struct p101_tool_model_edge *)model_reallocate(model->edges, capacity * sizeof(*edges));
     if(edges == NULL)
@@ -490,7 +502,7 @@ static int lifetime_matches(const struct p101_tool_model_node *birth, const stru
 
 static int pointer_is_null(const char *text)
 {
-    return text == NULL || text[0] == '\0' || strcmp(text, "-") == 0 || strcmp(text, "0") == 0 || strcmp(text, "0x0") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "NULL") == 0;
+    return text[0] == '\0' || strcmp(text, "-") == 0 || strcmp(text, "0") == 0 || strcmp(text, "0x0") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "NULL") == 0;
 }
 
 static int build_call_edges(struct p101_error *err, struct p101_tool_model *model, size_t *matched_exit)

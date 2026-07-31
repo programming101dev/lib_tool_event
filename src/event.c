@@ -68,6 +68,7 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
 
 #ifdef P101_TOOL_EVENT_TESTING
 static int force_health_allocation_failure;
+static int force_health_allocation_failure_errno = ENOMEM;
 static int force_zero_errno_on_read_error;
 static int force_zero_errno_on_write_error;
 static int force_format_overflow;
@@ -75,6 +76,11 @@ static int force_format_overflow;
 void p101_tool_event_test_force_health_allocation_failure(void)
 {
     force_health_allocation_failure = 1;
+}
+
+void p101_tool_event_test_set_health_allocation_failure_errno(int errnum)
+{
+    force_health_allocation_failure_errno = errnum;
 }
 
 void p101_tool_event_test_force_zero_errno_on_read_error(void)
@@ -421,7 +427,8 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
         if(force_health_allocation_failure != 0)
         {
             force_health_allocation_failure = 0;
-            errno                           = ENOMEM;
+            errno                           = force_health_allocation_failure_errno;
+            force_health_allocation_failure_errno = ENOMEM;
             grown                           = NULL;
         }
         else

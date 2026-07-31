@@ -84,6 +84,26 @@ static void test_valid_policy_summary(void)
     EXPECT(p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":2}}", "p101-analysis-findings-v1", &summary));
     EXPECT(!summary.has_records);
     EXPECT(summary.findings == 2U);
+    EXPECT(!p101_tool_event_parse_policy_summary_json("[]", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{bad}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\" 1}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\" \"summary\":{\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":1,\"summary\":{\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":false}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":1},\"summary\":{\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"unknown\":? ,\"summary\":{\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":[]}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{bad}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\" 1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"records\":\"bad\",\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"records\":1,\"records\":2,\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":\"bad\"}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":1,\"findings\":2}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"unknown\":? ,\"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"records\":1 \"findings\":1}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":1}} trailing", "p101-analysis-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\"}", "p101-analysis-findings-v1", &summary));
 }
 
 static void test_json_size(void)

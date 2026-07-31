@@ -58,6 +58,9 @@ static void test_public_boundaries(void)
     record.record_kind = P101_TOOL_EVENT_RECORD_CALL;
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
     p101_error_reset(err);
+    record.record_kind = (p101_tool_event_record_kind)99;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    p101_error_reset(err);
     initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, NULL, "id");
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
     p101_error_reset(err);

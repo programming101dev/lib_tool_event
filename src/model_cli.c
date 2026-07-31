@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 enum
 {
@@ -25,6 +26,12 @@ static int  ingest_path(struct p101_error *err, struct p101_tool_model *model, c
 static int  ingest_stream(struct p101_error *err, struct p101_tool_model *model, FILE *stream, bool calls, struct p101_tool_event_stream_health *health);
 static int  record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls);
 static int  write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path);
+
+#ifdef P101_TOOL_EVENT_TESTING
+extern void p101_tool_event_test_model_fail_allocation_after(size_t successful_allocations);
+extern void p101_tool_event_test_force_health_allocation_failure(void);
+extern void p101_tool_event_test_set_health_allocation_failure_errno(int errnum);
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -46,11 +53,17 @@ int main(int argc, char *argv[])
     }
 
     err = p101_error_create(false);
-    if(err == NULL)
+    if(err == NULL)    // GCOVR_EXCL_BR_LINE: lib_error has no injectable allocator; null remains a defensive process-start check.
     {
-        (void)fputs("p101-event-model: could not create error object\n", stderr);
-        return EXIT_TROUBLE;
+        (void)fputs("p101-event-model: could not create error object\n", stderr);    // GCOVR_EXCL_LINE
+        return EXIT_TROUBLE;                                                         // GCOVR_EXCL_LINE
     }
+#ifdef P101_TOOL_EVENT_TESTING
+    if(getenv("P101_TOOL_EVENT_TEST_FAIL_MODEL_CREATE") != NULL)
+    {
+        p101_tool_event_test_model_fail_allocation_after(0U);
+    }
+#endif
     model = p101_tool_model_create(err);
     if(model == NULL)
     {
@@ -65,6 +78,12 @@ int main(int argc, char *argv[])
         (void)fputs("p101-event-model: an admitted event stream is incomplete\n", stderr);
         goto done;
     }
+#ifdef P101_TOOL_EVENT_TESTING
+    if(getenv("P101_TOOL_EVENT_TEST_FAIL_FINISH") != NULL)
+    {
+        p101_tool_event_test_model_fail_allocation_after(0U);
+    }
+#endif
     if(p101_tool_model_finish(err, model) != 0 || write_model(err, model, args.output_path) != 0)
     {
         goto done;
@@ -77,7 +96,7 @@ done:
         const char *message;
 
         message = p101_error_get_message(err);
-        (void)fprintf(stderr, "p101-event-model: %s\n", message == NULL ? "model construction failed" : message);
+        (void)fprintf(stderr, "p101-event-model: %s\n", message);
     }
     p101_tool_event_stream_health_destroy(&resource_health);
     p101_tool_event_stream_health_destroy(&call_health);
@@ -149,12 +168,21 @@ static int ingest_path(struct p101_error *err, struct p101_tool_model *model, co
         P101_ERROR_RAISE_ERRNO(err, errno);
         return -1;
     }
+#ifdef P101_TOOL_EVENT_TESTING
+    if(getenv("P101_TOOL_EVENT_TEST_READ_ERROR") != NULL)
+    {
+        (void)close(fileno(stream));
+    }
+#endif
     result = ingest_stream(err, model, stream, calls, health);
+    // GCOVR_EXCL_START: fclose failure for a successfully read regular file is
+    // not portably injectable; read and parse failures are covered separately.
     if(fclose(stream) != 0 && result == 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         result = -1;
     }
+    // GCOVR_EXCL_STOP
     return result;
 }
 
@@ -162,7 +190,7 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
 {
     char line[P101_TOOL_EVENT_LINE_MAX_BYTES];
 
-    while(p101_error_has_no_error(err))
+    for(;;)
     {
         struct p101_tool_event_record record;
         p101_tool_event_line_status   line_status;
@@ -191,17 +219,32 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
             P101_ERROR_RAISE_ERRNO(err, EINVAL);
             return -1;
         }
+#ifdef P101_TOOL_EVENT_TESTING
+        if(getenv("P101_TOOL_EVENT_TEST_FAIL_HEALTH") != NULL)
+        {
+            if(getenv("P101_TOOL_EVENT_TEST_ZERO_HEALTH_ERRNO") != NULL)
+            {
+                p101_tool_event_test_set_health_allocation_failure_errno(0);
+            }
+            p101_tool_event_test_force_health_allocation_failure();
+        }
+#endif
         if(p101_tool_event_stream_health_observe(health, &record) != 0)
         {
             P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
             return -1;
         }
+#ifdef P101_TOOL_EVENT_TESTING
+        if(getenv("P101_TOOL_EVENT_TEST_FAIL_INGEST") != NULL)
+        {
+            p101_tool_event_test_model_fail_allocation_after(0U);
+        }
+#endif
         if(record.record_kind != P101_TOOL_EVENT_RECORD_COMPLETE && record_belongs_in_stream(&record, calls) != 0 && p101_tool_model_ingest(err, model, &record) != 0)
         {
             return -1;
         }
     }
-    return -1;
 }
 
 static int record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls)
@@ -225,10 +268,13 @@ static int write_model(struct p101_error *err, const struct p101_tool_model *mod
         return -1;
     }
     result = p101_tool_model_write_json(err, stream, model);
+    // GCOVR_EXCL_START: fclose failure for a successfully written regular file
+    // is not portably injectable; open and write failures are covered.
     if(path != NULL && fclose(stream) != 0 && result == 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         result = -1;
     }
+    // GCOVR_EXCL_STOP
     return result;
 }

@@ -5,6 +5,7 @@
 static int failures;
 
 extern void p101_tool_event_test_force_health_allocation_failure(void);
+extern void p101_tool_event_test_set_health_allocation_failure_errno(int errnum);
 
 #define EXPECT(condition)                                                                                                                                                                                                                                          \
     do                                                                                                                                                                                                                                                             \
@@ -27,6 +28,11 @@ static void test_invalid_and_allocation_failure(void)
     p101_tool_event_test_force_health_allocation_failure();
     EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
     EXPECT(health.allocation_failed == 1);
+    errno = EDOM;
+    p101_tool_event_test_set_health_allocation_failure_errno(0);
+    p101_tool_event_test_force_health_allocation_failure();
+    EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
+    EXPECT(errno == 0);
     p101_tool_event_stream_health_destroy(&health);
     p101_tool_event_stream_health_destroy(NULL);
     EXPECT(p101_tool_event_stream_health_incomplete_producers(NULL) == 0U);

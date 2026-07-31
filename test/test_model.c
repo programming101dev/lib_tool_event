@@ -8,6 +8,7 @@
 static int failures;
 
 extern void p101_tool_event_test_model_fail_allocation_after(size_t successful_allocations);
+extern void p101_tool_event_test_model_set_allocation_failure_errno(int errnum);
 
 #define EXPECT(condition)             \
     do                                \
@@ -104,6 +105,14 @@ static void test_model_graph_and_json(void)
 
     EXPECT(p101_tool_model_ingest(err, model, NULL) == -1);
     EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    {
+        struct p101_tool_event_record finished_record;
+
+        finished_record = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 5U);
+        EXPECT(p101_tool_model_ingest(err, model, &finished_record) == -1);
+        EXPECT(p101_error_is_errno(err, EINVAL));
+    }
     p101_tool_model_destroy(&model);
     EXPECT(model == NULL);
     p101_error_destroy(err);
@@ -127,6 +136,12 @@ static void test_invalid_operations(void)
     EXPECT(p101_error_is_errno(err, EINVAL));
     p101_error_reset(err);
     EXPECT(p101_tool_model_write_json(err, stream, model) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    EXPECT(p101_tool_model_write_json(err, NULL, model) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    EXPECT(p101_tool_model_write_json(err, stream, NULL) == -1);
     EXPECT(p101_error_is_errno(err, EINVAL));
     p101_error_reset(err);
     EXPECT(p101_tool_model_ingest(err, NULL, NULL) == -1);
@@ -351,6 +366,71 @@ static void test_model_allocation_and_output_failures(void)
     EXPECT(p101_tool_model_edge_count(model) == 0U);
     EXPECT(p101_tool_model_finish(err, model) == 0);
     p101_tool_model_destroy(&model);
+
+    p101_tool_event_test_model_set_allocation_failure_errno(0);
+    p101_tool_event_test_model_fail_allocation_after(0U);
+    EXPECT(p101_tool_model_create(err) == NULL);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+
+    model  = p101_tool_model_create(err);
+    record = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 50U);
+    p101_tool_event_test_model_fail_allocation_after(0U);
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+    p101_tool_model_destroy(&model);
+
+    model = p101_tool_model_create(err);
+    p101_tool_event_test_model_fail_allocation_after(1U);
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+    p101_tool_model_destroy(&model);
+
+    model = p101_tool_model_create(err);
+    EXPECT(p101_tool_model_ingest(err, model, &record) == 0);
+    p101_tool_event_test_model_fail_allocation_after(0U);
+    EXPECT(p101_tool_model_finish(err, model) == -1);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+    p101_tool_model_destroy(&model);
+
+    model = p101_tool_model_create(err);
+    ingest_call(err, model, 1U, P101_TOOL_EVENT_CALL_ENTER);
+    ingest_call(err, model, 2U, P101_TOOL_EVENT_CALL_EXIT);
+    p101_tool_event_test_model_fail_allocation_after(1U);
+    EXPECT(p101_tool_model_finish(err, model) == -1);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+    p101_tool_model_destroy(&model);
+    p101_tool_event_test_model_set_allocation_failure_errno(ENOMEM);
+
+    for(size_t successful_allocations = 0U; successful_allocations <= 12U; successful_allocations++)
+    {
+        model = p101_tool_model_create(err);
+        EXPECT(model != NULL);
+        record        = base_record(P101_TOOL_EVENT_RECORD_RESOURCE, successful_allocations + 10U);
+        record.resource_kind  = P101_TOOL_EVENT_RESOURCE_ACQUIRE;
+        record.function_name  = "function";
+        record.file_name      = "file";
+        record.call_name      = "call";
+        record.arguments      = "arguments";
+        record.result         = "result";
+        record.ptr            = "ptr";
+        record.new_ptr        = "new-ptr";
+        record.target         = "target";
+        record.resource_class = "class";
+        record.resource_id    = "id";
+        record.related_id     = "related";
+        record.metadata       = "metadata";
+        p101_tool_event_test_model_fail_allocation_after(successful_allocations);
+        EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+        EXPECT(p101_error_is_errno(err, ENOMEM));
+        p101_error_reset(err);
+        p101_tool_model_destroy(&model);
+    }
+
     p101_error_destroy(err);
 }
 
@@ -384,6 +464,187 @@ static void test_lifetime_uses_earliest_observed_sequence(void)
     p101_error_destroy(err);
 }
 
+static void expect_first_edge_allocation_failure(struct p101_error *err, struct p101_tool_model *model)
+{
+    p101_tool_event_test_model_fail_allocation_after(1U);
+    EXPECT(p101_tool_model_finish(err, model) == -1);
+    EXPECT(p101_error_is_errno(err, ENOMEM));
+    p101_error_reset(err);
+    p101_tool_model_destroy(&model);
+}
+
+static void test_model_edge_allocation_failures(void)
+{
+    struct p101_error             *err;
+    struct p101_tool_model        *model;
+    struct p101_tool_event_record  record;
+
+    err = p101_error_create(false);
+
+    model = p101_tool_model_create(err);
+    ingest_call(err, model, 1U, P101_TOOL_EVENT_CALL_ENTER);
+    ingest_call(err, model, 2U, P101_TOOL_EVENT_CALL_ENTER);
+    expect_first_edge_allocation_failure(err, model);
+
+    model = p101_tool_model_create(err);
+    ingest_call(err, model, 1U, P101_TOOL_EVENT_CALL_ENTER);
+    ingest_fd(err, model, 2U, P101_TOOL_EVENT_FD_OPEN);
+    expect_first_edge_allocation_failure(err, model);
+
+    model = p101_tool_model_create(err);
+    ingest_fd(err, model, 1U, P101_TOOL_EVENT_FD_OPEN);
+    ingest_fd(err, model, 2U, P101_TOOL_EVENT_FD_CLOSE);
+    expect_first_edge_allocation_failure(err, model);
+
+    model            = p101_tool_model_create(err);
+    record           = base_record(P101_TOOL_EVENT_RECORD_FORK, 1U);
+    record.child_pid = 99;
+    ingest_record(err, model, &record);
+    record     = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 2U);
+    record.pid = 99;
+    ingest_record(err, model, &record);
+    expect_first_edge_allocation_failure(err, model);
+
+    p101_error_destroy(err);
+}
+
+static void test_model_branch_shapes(void)
+{
+    static char *const null_pointers[] = {"", "-", "0", "0x0", "(nil)", "NULL"};
+    struct p101_error             *err;
+    struct p101_tool_model        *model;
+    struct p101_tool_event_record  record;
+    size_t                         sequence;
+
+    err   = p101_error_create(false);
+    model = p101_tool_model_create(err);
+
+    /* Grow the edge store, not merely the node store. */
+    for(sequence = 1U; sequence <= 40U; sequence++)
+    {
+        record           = base_record(P101_TOOL_EVENT_RECORD_CALL, sequence);
+        record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
+        record.call_name = "nested";
+        record.arguments = "";
+        record.result    = "";
+        ingest_record(err, model, &record);
+    }
+    EXPECT(p101_tool_model_finish(err, model) == 0);
+    EXPECT(p101_tool_model_edge_count(model) == 39U);
+    p101_tool_model_destroy(&model);
+
+    model            = p101_tool_model_create(err);
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 10U);
+    record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
+    record.call_name = "outer";
+    record.arguments = "";
+    record.result    = "";
+    ingest_record(err, model, &record);
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 30U);
+    record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
+    record.call_name = "future";
+    ingest_record(err, model, &record);
+    record           = base_record(P101_TOOL_EVENT_RECORD_FD, 20U);
+    record.fd_kind   = P101_TOOL_EVENT_FD_OPEN;
+    record.fd        = 3;
+    ingest_record(err, model, &record);
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 21U);
+    record.call_kind = P101_TOOL_EVENT_CALL_EXIT;
+    record.call_name = "not-an-enter";
+    record.result    = "0";
+    ingest_record(err, model, &record);
+    record           = base_record(P101_TOOL_EVENT_RECORD_FD, 22U);
+    record.fd_kind   = P101_TOOL_EVENT_FD_CLOSE;
+    record.fd        = 4;
+    ingest_record(err, model, &record);
+    record.sequence = 23U;
+    record.fd        = 3;
+    ingest_record(err, model, &record);
+    record.sequence = 24U;
+    ingest_record(err, model, &record);
+    record.sequence = 25U;
+    record.fd_kind  = P101_TOOL_EVENT_FD_OPEN;
+    record.fd       = 9;
+    ingest_record(err, model, &record);
+
+    record                = base_record(P101_TOOL_EVENT_RECORD_RESOURCE, 26U);
+    record.resource_kind  = P101_TOOL_EVENT_RESOURCE_ACQUIRE;
+    record.resource_class = "mutex";
+    record.resource_id    = "one";
+    record.related_id     = "";
+    record.metadata       = "";
+    ingest_record(err, model, &record);
+    record.resource_kind  = P101_TOOL_EVENT_RESOURCE_RELEASE;
+    record.sequence       = 27U;
+    record.resource_class = "condition";
+    ingest_record(err, model, &record);
+    record.sequence       = 28U;
+    record.resource_class = "mutex";
+    ingest_record(err, model, &record);
+
+    sequence = 40U;
+    for(size_t index = 0U; index < sizeof(null_pointers) / sizeof(null_pointers[0]); index++)
+    {
+        record            = base_record(P101_TOOL_EVENT_RECORD_ALLOC, sequence++);
+        record.alloc_kind = P101_TOOL_EVENT_ALLOC_REALLOC;
+        record.ptr        = "old";
+        record.new_ptr    = null_pointers[index];
+        ingest_record(err, model, &record);
+    }
+    record            = base_record(P101_TOOL_EVENT_RECORD_ALLOC, sequence);
+    record.alloc_kind = P101_TOOL_EVENT_ALLOC_REALLOC;
+    record.ptr        = "old";
+    record.new_ptr    = "0x123";
+    ingest_record(err, model, &record);
+
+    EXPECT(p101_tool_model_finish(err, model) == 0);
+    p101_tool_model_destroy(&model);
+
+    /* Exercise unsuccessful matching after a call was already consumed and
+     * after a same-name call from a different context. */
+    model            = p101_tool_model_create(err);
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 1U);
+    record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
+    record.call_name = "matched";
+    record.arguments = "";
+    record.result    = "";
+    ingest_record(err, model, &record);
+    record.call_kind = P101_TOOL_EVENT_CALL_EXIT;
+    record.sequence  = 2U;
+    ingest_record(err, model, &record);
+    record.sequence = 3U;
+    ingest_record(err, model, &record);
+    record.call_kind  = P101_TOOL_EVENT_CALL_ENTER;
+    record.sequence   = 4U;
+    record.context_id = 99U;
+    ingest_record(err, model, &record);
+    record.call_kind  = P101_TOOL_EVENT_CALL_EXIT;
+    record.sequence   = 5U;
+    record.context_id = 7U;
+    ingest_record(err, model, &record);
+    EXPECT(p101_tool_model_finish(err, model) == 0);
+    p101_tool_model_destroy(&model);
+
+    /* Ingestion order and event sequence are separate. The innermost
+     * enclosing call is selected by sequence, not array position. */
+    model            = p101_tool_model_create(err);
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 20U);
+    record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
+    record.call_name = "later";
+    record.arguments = "";
+    record.result    = "";
+    ingest_record(err, model, &record);
+    record.sequence  = 10U;
+    record.call_name = "earlier";
+    ingest_record(err, model, &record);
+    record           = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 30U);
+    record.target    = "child";
+    ingest_record(err, model, &record);
+    EXPECT(p101_tool_model_finish(err, model) == 0);
+    p101_tool_model_destroy(&model);
+    p101_error_destroy(err);
+}
+
 int main(void)
 {
     test_model_graph_and_json();
@@ -392,5 +653,7 @@ int main(void)
     test_empty_complete_and_capacity_growth();
     test_model_allocation_and_output_failures();
     test_lifetime_uses_earliest_observed_sequence();
+    test_model_edge_allocation_failures();
+    test_model_branch_shapes();
     return failures == 0 ? 0 : 1;
 }

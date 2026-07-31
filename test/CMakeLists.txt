@@ -92,6 +92,7 @@ add_test(NAME test_p101_tool_event_headers_cxx COMMAND test_p101_tool_event_head
 
 add_executable(p101_event_model_cli_under_test
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/model_cli.c")
+target_compile_definitions(p101_event_model_cli_under_test PRIVATE P101_TOOL_EVENT_TESTING=1)
 target_link_libraries(p101_event_model_cli_under_test PRIVATE
         p101_tool_event_under_test
         p101_error_under_test)

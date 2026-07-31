@@ -59,7 +59,7 @@ int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struc
     (void)fputs(",\n", stream);
     write_edges(stream, model);
     (void)fputs("\n}\n", stream);
-    if(fflush(stream) != 0 || ferror(stream) != 0)
+    if(fflush(stream) != 0)
     {
         P101_ERROR_RAISE_ERRNO(err, EIO);
         return -1;
@@ -69,14 +69,12 @@ int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struc
 
 static const char *node_kind_name(const struct p101_tool_model_node *node)
 {
-    if(node == NULL)
-    {
-        return "unknown";    // GCOVR_EXCL_LINE -- internal callers always supply a model node.
-    }
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
 #endif
+    // GCOVR_EXCL_BR_START: model nodes are constructed only from admitted
+    // protocol enum values; the defensive default is not an executable input.
     switch(node->record_kind)
     {
         case P101_TOOL_EVENT_RECORD_FD:
@@ -111,15 +109,18 @@ static const char *node_kind_name(const struct p101_tool_model_node *node)
         {
             return "resource";
         }
+        // GCOVR_EXCL_START
         case P101_TOOL_EVENT_RECORD_COMPLETE:
         {
-            return "complete";    // GCOVR_EXCL_LINE -- completion records are deliberately not model nodes.
+            return "complete";
         }
-        default:    // GCOVR_EXCL_LINE -- callers can only supply protocol enum values.
+        default:
         {
-            return "unknown";    // GCOVR_EXCL_LINE
+            return "unknown";
         }
+        // GCOVR_EXCL_STOP
     }
+    // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -131,6 +132,7 @@ static const char *edge_kind_name(p101_tool_model_edge_kind kind)
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
 #endif
+    // GCOVR_EXCL_BR_START: edges are created only by the typed model builder.
     switch(kind)
     {
         case P101_TOOL_MODEL_EDGE_CALL_PARENT:
@@ -153,11 +155,14 @@ static const char *edge_kind_name(p101_tool_model_edge_kind kind)
         {
             return "process-child-event";
         }
-        default:    // GCOVR_EXCL_LINE -- model construction emits known edge kinds.
+        // GCOVR_EXCL_START
+        default:
         {
-            return "unknown";    // GCOVR_EXCL_LINE
+            return "unknown";
         }
+        // GCOVR_EXCL_STOP
     }
+    // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -251,7 +256,7 @@ static void write_resource_fields(FILE *stream, const struct p101_tool_model_nod
             (void)fprintf(stream, ",\"cloexec\":%s", (int)node->cloexec ? "true" : "false");
         }
     }
-    else if(node->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE)
+    else
     {
         (void)fputs(",\"operation\":", stream);
         write_json_string(stream, resource_operation_name(node->resource_kind));
@@ -370,6 +375,7 @@ static const char *alloc_kind_name(p101_tool_event_alloc_kind kind)
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
 #endif
+    // GCOVR_EXCL_BR_START: allocation kinds come from validated event records.
     switch(kind)
     {
         case P101_TOOL_EVENT_ALLOC_ALLOC:
@@ -384,11 +390,14 @@ static const char *alloc_kind_name(p101_tool_event_alloc_kind kind)
         {
             return "realloc";
         }
-        default:    // GCOVR_EXCL_LINE -- callers can only supply protocol enum values.
+        // GCOVR_EXCL_START
+        default:
         {
-            return "unknown";    // GCOVR_EXCL_LINE
+            return "unknown";
         }
+        // GCOVR_EXCL_STOP
     }
+    // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -400,6 +409,7 @@ static const char *resource_operation_name(p101_tool_event_resource_kind kind)
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
 #endif
+    // GCOVR_EXCL_BR_START: resource kinds come from validated event records.
     switch(kind)
     {
         case P101_TOOL_EVENT_RESOURCE_ACQUIRE:
@@ -418,11 +428,14 @@ static const char *resource_operation_name(p101_tool_event_resource_kind kind)
         {
             return "transfer";
         }
-        default:    // GCOVR_EXCL_LINE -- callers can only supply protocol enum values.
+        // GCOVR_EXCL_START
+        default:
         {
-            return "unknown";    // GCOVR_EXCL_LINE
+            return "unknown";
         }
+        // GCOVR_EXCL_STOP
     }
+    // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif

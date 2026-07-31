@@ -32,7 +32,6 @@ src/model.c:*:memset
 src/model.c:*:realloc
 src/model.c:*:strcmp
 src/model.c:*:strlen
-src/model_json.c:*:ferror
 src/model_json.c:*:fflush
 src/model_json.c:*:fprintf
 src/model_json.c:*:fputc
@@ -53,8 +52,10 @@ src/summary.c:is_hex_digit:strchr
 src/summary.c:key_text:memcpy
 src/summary.c:key_text:strlen
 src/summary.c:*:memset
+src/summary.c:p101_tool_event_parse_policy_summary_json:strcmp
 src/summary.c:p101_tool_event_parse_resource_summary_json:strcmp
 src/summary.c:parse_boolean:strncmp
 src/summary.c:parse_log_health:strcmp
+src/summary.c:parse_policy_summary:strcmp
 src/summary.c:parse_string:strchr
 src/summary.c:skip_value:strncmp
