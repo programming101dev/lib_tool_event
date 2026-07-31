@@ -18,6 +18,11 @@ enum
 #endif
 };
 
+/* Records own mutable views into parsed lines, so normalized literals use
+ * arrays with compatible pointer types. They are never modified here. */
+static char fd_resource_class[]         = "fd";            // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static char allocation_resource_class[] = "allocation";    // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
 struct p101_tool_event_lifecycle_model
 {
     struct p101_tool_event_lifecycle_entry   *entries;
@@ -176,10 +181,10 @@ int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_ev
     {
         case P101_TOOL_EVENT_RECORD_RESOURCE:
             result = ingest_resource(err, model, record);
-            break;
+            break;    // GCOVR_EXCL_LINE
         case P101_TOOL_EVENT_RECORD_FD:
             result = ingest_fd(err, model, record);
-            break;
+            break;    // GCOVR_EXCL_LINE
         case P101_TOOL_EVENT_RECORD_ALLOC:
             result = ingest_allocation(err, model, record);
             break;
@@ -193,10 +198,16 @@ int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_ev
             rollback_exec(model, record->pid);
             result = 0;
             break;
-        default:
+        case P101_TOOL_EVENT_RECORD_SPAWN:
+        case P101_TOOL_EVENT_RECORD_CALL:
+        case P101_TOOL_EVENT_RECORD_COMPLETE:
             P101_ERROR_RAISE_CHECK(err);
             result = -1;
             break;
+        default:
+            P101_ERROR_RAISE_CHECK(err);    // GCOVR_EXCL_LINE -- exhaustive enum has no other valid value.
+            result = -1;                    // GCOVR_EXCL_LINE
+            break;                          // GCOVR_EXCL_LINE
     }
 #ifdef __clang__
     #pragma clang diagnostic pop
@@ -277,7 +288,7 @@ static int ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_mo
     }
     normalized                = *record;
     normalized.resource_kind  = record->fd_kind == P101_TOOL_EVENT_FD_OPEN ? P101_TOOL_EVENT_RESOURCE_ACQUIRE : P101_TOOL_EVENT_RESOURCE_RELEASE;
-    normalized.resource_class = "fd";
+    normalized.resource_class = fd_resource_class;
     normalized.resource_id    = identifier;
     normalized.related_id     = NULL;
     normalized.size           = 0U;
@@ -291,7 +302,7 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
     int                                           result;
 
     normalized                = *record;
-    normalized.resource_class = "allocation";
+    normalized.resource_class = allocation_resource_class;
     normalized.related_id     = NULL;
 
     if(record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC)
@@ -410,7 +421,7 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         inherited.record_kind    = entry->origin_kind;
         inherited.pid            = record->child_pid;
         inherited.context_id     = record->context_id;
-        inherited.resource_class = "fd";
+        inherited.resource_class = fd_resource_class;
         inherited.resource_id    = identifier;
         inherited.size           = entry->size;
         if(add_entry(err, model, &inherited, identifier) != 0)
@@ -449,7 +460,7 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
 
     normalized                = *record;
     normalized.resource_kind  = P101_TOOL_EVENT_RESOURCE_RELEASE;
-    normalized.resource_class = "fd";
+    normalized.resource_class = fd_resource_class;
     normalized.resource_id    = identifier;
     if(release_entry(err, model, &normalized) != 0)
     {

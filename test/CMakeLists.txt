@@ -19,6 +19,8 @@ endif()
 add_library(p101_tool_event_under_test STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/event.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/lifecycle.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/model.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/model_json.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/ownership.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/receipt.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/summary.c"
@@ -70,6 +72,12 @@ target_compile_options(test_p101_tool_event_lifecycle PRIVATE ${_COV})
 target_link_options(test_p101_tool_event_lifecycle PRIVATE ${_COV})
 add_test(NAME test_p101_tool_event_lifecycle COMMAND test_p101_tool_event_lifecycle)
 
+add_executable(test_p101_tool_event_model test_model.c)
+target_link_libraries(test_p101_tool_event_model PRIVATE p101_tool_event_under_test p101_error_under_test)
+target_compile_options(test_p101_tool_event_model PRIVATE ${_COV})
+target_link_options(test_p101_tool_event_model PRIVATE ${_COV})
+add_test(NAME test_p101_tool_event_model COMMAND test_p101_tool_event_model)
+
 add_executable(test_p101_tool_event_health test_health.c)
 target_link_libraries(test_p101_tool_event_health PRIVATE p101_tool_event_under_test p101_error_under_test)
 target_compile_options(test_p101_tool_event_health PRIVATE ${_COV})
@@ -81,3 +89,16 @@ target_link_libraries(test_p101_tool_event_headers_cxx PRIVATE p101_tool_event_u
 target_compile_options(test_p101_tool_event_headers_cxx PRIVATE ${_COV})
 target_link_options(test_p101_tool_event_headers_cxx PRIVATE ${_COV})
 add_test(NAME test_p101_tool_event_headers_cxx COMMAND test_p101_tool_event_headers_cxx)
+
+add_executable(p101_event_model_cli_under_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/model_cli.c")
+target_link_libraries(p101_event_model_cli_under_test PRIVATE
+        p101_tool_event_under_test
+        p101_error_under_test)
+target_compile_options(p101_event_model_cli_under_test PRIVATE ${_COV})
+target_link_options(p101_event_model_cli_under_test PRIVATE ${_COV})
+add_test(NAME test_p101_event_model_cli
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/test_model_cli.sh"
+                "$<TARGET_FILE:p101_event_model_cli_under_test>"
+                "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/model-resources.log"
+                "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/model-calls.log")

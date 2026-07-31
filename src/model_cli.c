@@ -1,0 +1,234 @@
+#include <errno.h>
+#include <p101_error/error.h>
+#include <p101_tool_event/event.h>
+#include <p101_tool_event/model.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+enum
+{
+    EXIT_TROUBLE = 2
+};
+
+struct arguments
+{
+    const char *resource_path;
+    const char *call_path;
+    const char *output_path;
+};
+
+static void usage(FILE *stream, const char *program);
+static int  parse_arguments(int argc, char *argv[], struct arguments *args);
+static int  ingest_path(struct p101_error *err, struct p101_tool_model *model, const char *path, bool calls, struct p101_tool_event_stream_health *health);
+static int  ingest_stream(struct p101_error *err, struct p101_tool_model *model, FILE *stream, bool calls, struct p101_tool_event_stream_health *health);
+static int  record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls);
+static int  write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path);
+
+int main(int argc, char *argv[])
+{
+    struct arguments                     args;
+    struct p101_error                   *err;
+    struct p101_tool_event_stream_health call_health;
+    struct p101_tool_event_stream_health resource_health;
+    struct p101_tool_model              *model;
+    int                                  result;
+
+    memset(&args, 0, sizeof(args));
+    memset(&call_health, 0, sizeof(call_health));
+    memset(&resource_health, 0, sizeof(resource_health));
+    model  = NULL;
+    result = EXIT_TROUBLE;
+    if(parse_arguments(argc, argv, &args) != 0)
+    {
+        return EXIT_TROUBLE;
+    }
+
+    err = p101_error_create(false);
+    if(err == NULL)
+    {
+        (void)fputs("p101-event-model: could not create error object\n", stderr);
+        return EXIT_TROUBLE;
+    }
+    model = p101_tool_model_create(err);
+    if(model == NULL)
+    {
+        goto done;
+    }
+    if(ingest_path(err, model, args.resource_path, false, &resource_health) != 0 || ingest_path(err, model, args.call_path, true, &call_health) != 0)
+    {
+        goto done;
+    }
+    if(!p101_tool_event_stream_health_is_complete(&resource_health) || !p101_tool_event_stream_health_is_complete(&call_health))
+    {
+        (void)fputs("p101-event-model: an admitted event stream is incomplete\n", stderr);
+        goto done;
+    }
+    if(p101_tool_model_finish(err, model) != 0 || write_model(err, model, args.output_path) != 0)
+    {
+        goto done;
+    }
+    result = EXIT_SUCCESS;
+
+done:
+    if(p101_error_has_error(err))
+    {
+        const char *message;
+
+        message = p101_error_get_message(err);
+        (void)fprintf(stderr, "p101-event-model: %s\n", message == NULL ? "model construction failed" : message);
+    }
+    p101_tool_event_stream_health_destroy(&resource_health);
+    p101_tool_event_stream_health_destroy(&call_health);
+    p101_tool_model_destroy(&model);
+    p101_error_destroy(err);
+    return result;
+}
+
+static void usage(FILE *stream, const char *program)
+{
+    (void)fprintf(stream, "Usage: %s -r <resources.log> -c <calls.log> [-o <run-model.json>]\n", program);
+}
+
+static int parse_arguments(int argc, char *argv[], struct arguments *args)
+{
+    int index;
+
+    if(argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
+    {
+        usage(stdout, argv[0]);
+        exit(EXIT_SUCCESS);
+    }
+    for(index = 1; index < argc; index++)
+    {
+        const char **destination;
+
+        destination = NULL;
+        if(strcmp(argv[index], "-r") == 0)
+        {
+            destination = &args->resource_path;
+        }
+        else if(strcmp(argv[index], "-c") == 0)
+        {
+            destination = &args->call_path;
+        }
+        else if(strcmp(argv[index], "-o") == 0)
+        {
+            destination = &args->output_path;
+        }
+        else
+        {
+            usage(stderr, argv[0]);
+            return -1;
+        }
+        index++;
+        if(index >= argc || argv[index][0] == '\0' || *destination != NULL)
+        {
+            usage(stderr, argv[0]);
+            return -1;
+        }
+        *destination = argv[index];
+    }
+    if(args->resource_path == NULL || args->call_path == NULL)
+    {
+        usage(stderr, argv[0]);
+        return -1;
+    }
+    return 0;
+}
+
+static int ingest_path(struct p101_error *err, struct p101_tool_model *model, const char *path, bool calls, struct p101_tool_event_stream_health *health)
+{
+    FILE *stream;
+    int   result;
+
+    stream = fopen(path, "r");    // NOLINT(android-cloexec-fopen) -- portable C17 CLI; the stream is never inherited.
+    if(stream == NULL)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+        return -1;
+    }
+    result = ingest_stream(err, model, stream, calls, health);
+    if(fclose(stream) != 0 && result == 0)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+        result = -1;
+    }
+    return result;
+}
+
+static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, FILE *stream, bool calls, struct p101_tool_event_stream_health *health)
+{
+    char line[P101_TOOL_EVENT_LINE_MAX_BYTES];
+
+    while(p101_error_has_no_error(err))
+    {
+        struct p101_tool_event_record record;
+        p101_tool_event_line_status   line_status;
+        p101_tool_event_parse_status  parse_status;
+
+        line_status = p101_tool_event_read_line(err, stream, line, sizeof(line));
+        if(line_status == P101_TOOL_EVENT_LINE_EOF)
+        {
+            return 0;
+        }
+        if(line_status != P101_TOOL_EVENT_LINE_OK)
+        {
+            if(line_status == P101_TOOL_EVENT_LINE_MALFORMED)
+            {
+                P101_ERROR_RAISE_ERRNO(err, EINVAL);
+            }
+            return -1;
+        }
+        parse_status = p101_tool_event_parse_line(line, &record);
+        if(parse_status == P101_TOOL_EVENT_PARSE_OTHER)
+        {
+            continue;
+        }
+        if(parse_status != P101_TOOL_EVENT_PARSE_OK)
+        {
+            P101_ERROR_RAISE_ERRNO(err, EINVAL);
+            return -1;
+        }
+        if(p101_tool_event_stream_health_observe(health, &record) != 0)
+        {
+            P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
+            return -1;
+        }
+        if(record.record_kind != P101_TOOL_EVENT_RECORD_COMPLETE && record_belongs_in_stream(&record, calls) != 0 && p101_tool_model_ingest(err, model, &record) != 0)
+        {
+            return -1;
+        }
+    }
+    return -1;
+}
+
+static int record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls)
+{
+    if(calls)
+    {
+        return record->record_kind == P101_TOOL_EVENT_RECORD_CALL;
+    }
+    return record->record_kind != P101_TOOL_EVENT_RECORD_CALL;
+}
+
+static int write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path)
+{
+    FILE *stream;
+    int   result;
+
+    stream = path == NULL ? stdout : fopen(path, "w");    // NOLINT(android-cloexec-fopen) -- portable C17 CLI; the stream is never inherited.
+    if(stream == NULL)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+        return -1;
+    }
+    result = p101_tool_model_write_json(err, stream, model);
+    if(path != NULL && fclose(stream) != 0 && result == 0)
+    {
+        P101_ERROR_RAISE_ERRNO(err, errno);
+        result = -1;
+    }
+    return result;
+}

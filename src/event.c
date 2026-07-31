@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <limits.h>
+#include <p101_error/attributes.h>
 #include <p101_tool_event/event.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -55,7 +56,7 @@ struct line_builder
 
 static void                                    append_char(struct line_builder *builder, char value);
 static void                                    append_text(struct line_builder *builder, const char *text);
-static void                                    append_format(struct line_builder *builder, const char *format, ...);
+static void                                    append_format(struct line_builder *builder, const char *format, ...) P101_ATTR_PRINTF(2, 3);
 static void                                    append_field(struct line_builder *builder, const char *text);
 static void                                    write_metadata(struct line_builder *builder, const struct p101_tool_event_output *record);
 static void                                    write_payload(struct line_builder *builder, const struct p101_tool_event_output *record);
@@ -426,7 +427,7 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
         else
 #endif
         {
-            grown = realloc(health->producers, capacity * sizeof(*health->producers));
+            grown = (struct p101_tool_event_producer_health *)realloc(health->producers, capacity * sizeof(*health->producers));
         }
         if(grown == NULL)
         {
