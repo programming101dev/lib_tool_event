@@ -118,9 +118,9 @@ static const char *node_kind_name(const struct p101_tool_model_node *node)
         {
             return "unknown";
         }
-        // GCOVR_EXCL_STOP
+            // GCOVR_EXCL_STOP
     }
-    // GCOVR_EXCL_BR_STOP
+        // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -160,9 +160,9 @@ static const char *edge_kind_name(p101_tool_model_edge_kind kind)
         {
             return "unknown";
         }
-        // GCOVR_EXCL_STOP
+            // GCOVR_EXCL_STOP
     }
-    // GCOVR_EXCL_BR_STOP
+        // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -395,9 +395,9 @@ static const char *alloc_kind_name(p101_tool_event_alloc_kind kind)
         {
             return "unknown";
         }
-        // GCOVR_EXCL_STOP
+            // GCOVR_EXCL_STOP
     }
-    // GCOVR_EXCL_BR_STOP
+        // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
@@ -433,9 +433,9 @@ static const char *resource_operation_name(p101_tool_event_resource_kind kind)
         {
             return "unknown";
         }
-        // GCOVR_EXCL_STOP
+            // GCOVR_EXCL_STOP
     }
-    // GCOVR_EXCL_BR_STOP
+        // GCOVR_EXCL_BR_STOP
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif

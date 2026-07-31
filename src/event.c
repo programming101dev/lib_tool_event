@@ -426,10 +426,10 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
 #ifdef P101_TOOL_EVENT_TESTING
         if(force_health_allocation_failure != 0)
         {
-            force_health_allocation_failure = 0;
-            errno                           = force_health_allocation_failure_errno;
+            force_health_allocation_failure       = 0;
+            errno                                 = force_health_allocation_failure_errno;
             force_health_allocation_failure_errno = ENOMEM;
-            grown                           = NULL;
+            grown                                 = NULL;
         }
         else
 #endif
