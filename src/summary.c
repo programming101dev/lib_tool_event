@@ -29,6 +29,7 @@ static bool skip_array(struct json_cursor *cursor, size_t depth);
 static bool key_text(const char *key, char output[JSON_KEY_CAPACITY]);
 static bool find_top_level_size(const char *text, const char *wanted, size_t *value);
 static bool parse_log_health(struct json_cursor *cursor, bool *complete);
+static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary);
 static bool is_decimal_digit(char value);
 static bool is_hex_digit(char value);
 
@@ -51,6 +52,96 @@ bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *
         return false;
     }
     return find_top_level_size(text, wanted, value);
+}
+
+bool p101_tool_event_parse_policy_summary_json(const char *text, const char *schema, struct p101_tool_event_policy_summary *summary)
+{
+    struct json_cursor cursor;
+    unsigned int       seen;
+    bool               first;
+    bool               schema_ok;
+
+    enum
+    {
+        SEEN_SCHEMA   = 1U << 0U,
+        SEEN_SUMMARY  = 1U << 1U,
+        SEEN_REQUIRED = SEEN_SCHEMA | SEEN_SUMMARY
+    };
+
+    if(text == NULL || schema == NULL || schema[0] == '\0' || summary == NULL)
+    {
+        return false;
+    }
+
+    memset(summary, 0, sizeof(*summary));
+    cursor.current = text;
+    seen           = 0U;
+    first          = true;
+    schema_ok      = false;
+    skip_space(&cursor);
+    if(*cursor.current++ != '{')
+    {
+        return false;
+    }
+
+    while(true)
+    {
+        char key[JSON_KEY_CAPACITY];
+
+        skip_space(&cursor);
+        if(*cursor.current == '}')
+        {
+            cursor.current++;
+            break;
+        }
+        if(!first)
+        {
+            if(*cursor.current++ != ',')
+            {
+                return false;
+            }
+            skip_space(&cursor);
+        }
+        first = false;
+        if(!parse_string(&cursor, key, sizeof(key)))
+        {
+            return false;
+        }
+        skip_space(&cursor);
+        if(*cursor.current++ != ':')
+        {
+            return false;
+        }
+        skip_space(&cursor);
+
+        if(strcmp(key, "schema") == 0)
+        {
+            char actual_schema[JSON_KEY_CAPACITY];
+
+            if((seen & SEEN_SCHEMA) != 0U || !parse_string(&cursor, actual_schema, sizeof(actual_schema)))
+            {
+                return false;
+            }
+            seen |= SEEN_SCHEMA;
+            schema_ok = strcmp(actual_schema, schema) == 0;
+        }
+        else if(strcmp(key, "summary") == 0)
+        {
+            if((seen & SEEN_SUMMARY) != 0U || !parse_policy_summary(&cursor, summary))
+            {
+                return false;
+            }
+            seen |= SEEN_SUMMARY;
+        }
+        else if(!skip_value(&cursor, 0U))
+        {
+            return false;
+        }
+    }
+
+    skip_space(&cursor);
+    summary->parsed = (*cursor.current == '\0' && seen == SEEN_REQUIRED && schema_ok) != 0;
+    return summary->parsed;
 }
 
 bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_tool_event_resource_summary *summary)
@@ -220,6 +311,81 @@ size_t p101_tool_event_resource_summary_finding_count(const struct p101_tool_eve
         }
         return count;
     }
+}
+
+static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary)
+{
+    unsigned int seen;
+    bool         first;
+
+    enum
+    {
+        SEEN_RECORDS  = 1U << 0U,
+        SEEN_FINDINGS = 1U << 1U,
+        SEEN_REQUIRED = SEEN_FINDINGS
+    };
+
+    if(*cursor->current++ != '{')
+    {
+        return false;
+    }
+    seen  = 0U;
+    first = true;
+
+    while(true)
+    {
+        char key[JSON_KEY_CAPACITY];
+
+        skip_space(cursor);
+        if(*cursor->current == '}')
+        {
+            cursor->current++;
+            break;
+        }
+        if(!first)
+        {
+            if(*cursor->current++ != ',')
+            {
+                return false;
+            }
+            skip_space(cursor);
+        }
+        first = false;
+        if(!parse_string(cursor, key, sizeof(key)))
+        {
+            return false;
+        }
+        skip_space(cursor);
+        if(*cursor->current++ != ':')
+        {
+            return false;
+        }
+        skip_space(cursor);
+
+        if(strcmp(key, "records") == 0)
+        {
+            if((seen & SEEN_RECORDS) != 0U || !parse_size(cursor, &summary->records))
+            {
+                return false;
+            }
+            seen |= SEEN_RECORDS;
+            summary->has_records = true;
+        }
+        else if(strcmp(key, "findings") == 0)
+        {
+            if((seen & SEEN_FINDINGS) != 0U || !parse_size(cursor, &summary->findings))
+            {
+                return false;
+            }
+            seen |= SEEN_FINDINGS;
+        }
+        else if(!skip_value(cursor, 0U))
+        {
+            return false;
+        }
+    }
+
+    return (seen & SEEN_REQUIRED) == SEEN_REQUIRED;
 }
 
 static void skip_space(struct json_cursor *cursor)

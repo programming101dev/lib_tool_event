@@ -25,6 +25,15 @@ extern "C"
         bool   parsed;
     };
 
+    struct p101_tool_event_policy_summary
+    {
+        size_t records;
+        size_t findings;
+        bool   has_records;
+        bool   parsed;
+    };
+
+    bool   p101_tool_event_parse_policy_summary_json(const char *text, const char *schema, struct p101_tool_event_policy_summary *summary);
     bool   p101_tool_event_parse_resource_summary_json(const char *text, struct p101_tool_event_resource_summary *summary);
     bool   p101_tool_event_parse_json_size(const char *text, const char *key, size_t *value);
     size_t p101_tool_event_resource_summary_finding_count(const struct p101_tool_event_resource_summary *summary);

@@ -61,6 +61,31 @@ static void test_valid_summary_and_count(void)
     EXPECT(p101_tool_event_parse_resource_summary_json(text, &summary));
 }
 
+static void test_valid_policy_summary(void)
+{
+    const char *text =
+        "{\"schema\":\"p101-resource-policy-findings-v1\","
+        "\"findings\":[{\"id\":\"P101-FD-001\"}],"
+        "\"summary\":{\"records\":7,\"processes\":1,\"findings\":1,"
+        "\"process_metrics\":[]}}";
+    struct p101_tool_event_policy_summary summary;
+
+    EXPECT(p101_tool_event_parse_policy_summary_json(text, "p101-resource-policy-findings-v1", &summary));
+    EXPECT(summary.parsed);
+    EXPECT(summary.has_records);
+    EXPECT(summary.records == 7U);
+    EXPECT(summary.findings == 1U);
+    EXPECT(!p101_tool_event_parse_policy_summary_json(text, "p101-other-schema", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json(NULL, "p101-resource-policy-findings-v1", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json(text, NULL, &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json(text, "", &summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json(text, "p101-resource-policy-findings-v1", NULL));
+    EXPECT(!p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-resource-policy-findings-v1\",\"summary\":{\"records\":7}}", "p101-resource-policy-findings-v1", &summary));
+    EXPECT(p101_tool_event_parse_policy_summary_json("{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":2}}", "p101-analysis-findings-v1", &summary));
+    EXPECT(!summary.has_records);
+    EXPECT(summary.findings == 2U);
+}
+
 static void test_json_size(void)
 {
     char   long_key[128];
@@ -266,6 +291,7 @@ static void test_depth_limit(void)
 int main(void)
 {
     test_valid_summary_and_count();
+    test_valid_policy_summary();
     test_json_size();
     test_recognized_field_failures();
     test_summary_structure_failures();
