@@ -2,6 +2,8 @@
 # graph. It must parse and serialize the protocol without calling back through
 # the observation layer it serves.
 src/event.c:*:ferror
+src/event.c:*:va_end
+src/event.c:*:va_start
 src/event.c:append_format:vsnprintf
 src/event.c:p101_tool_event_write:flockfile
 src/event.c:p101_tool_event_write:fileno
@@ -44,9 +46,13 @@ src/model_cli.c:*:fputs
 src/model_cli.c:*:memset
 src/model_cli.c:*:strcmp
 src/receipt.c:*:close
+src/receipt.c:*:fprintf
+src/receipt.c:*:fputc
+src/receipt.c:*:fputs
 src/receipt.c:*:memset
 src/receipt.c:*:open
 src/receipt.c:*:read
+src/receipt.c:*:strlen
 src/summary.c:find_top_level_size:strcmp
 src/summary.c:is_hex_digit:strchr
 src/summary.c:key_text:memcpy
