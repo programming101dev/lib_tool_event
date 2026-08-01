@@ -37,6 +37,8 @@ struct p101_tool_event_lifecycle_model
 static char                                   *copy_text(struct p101_error *err, const char *text);
 static struct p101_tool_event_lifecycle_entry *find_latest(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, bool live_only);
 static int                                     add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record, const char *resource_id);
+static int                                     ensure_finding_capacity(struct p101_error *err, struct p101_tool_event_lifecycle_model *model);
+static int                                     add_leak_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_lifecycle_entry *entry);
 static int   add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous);
 static int   release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
 static int   ingest_resource(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
@@ -509,23 +511,15 @@ int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_ev
 
     for(size_t i = 0U; i < model->entry_count; i++)
     {
-        struct p101_tool_event_record record = {0};
+        struct p101_tool_event_lifecycle_entry *entry;
 
-        model->entries[i].exec_pending = false;
-        if(!model->entries[i].live)
+        entry               = &model->entries[i];
+        entry->exec_pending = false;
+        if(!entry->live)
         {
             continue;
         }
-        record.pid            = model->entries[i].pid;
-        record.record_kind    = model->entries[i].origin_kind;
-        record.context_id     = model->entries[i].acquired_context_id;
-        record.sequence       = model->entries[i].acquired_sequence;
-        record.resource_class = model->entries[i].resource_class;
-        record.resource_id    = model->entries[i].resource_id;
-        record.line_number    = model->entries[i].acquired_line_number;
-        record.function_name  = model->entries[i].acquired_function_name;
-        record.file_name      = model->entries[i].acquired_file_name;
-        if(add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK, &record, NULL) != 0)
+        if(add_leak_finding(err, model, entry) != 0)
         {
             return -1;
         }
@@ -641,16 +635,8 @@ static int add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_mo
     return 0;
 }
 
-static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous)
+static int ensure_finding_capacity(struct p101_error *err, struct p101_tool_event_lifecycle_model *model)
 {
-    struct p101_tool_event_lifecycle_finding *finding;
-    const char                               *resource_class;
-    const char                               *resource_id;
-    char                                     *resource_class_copy;
-    char                                     *resource_id_copy;
-    const char                               *previous_function_name;
-    const char                               *previous_file_name;
-
     if(model->finding_count >= MAX_LIFECYCLE_FINDINGS)
     {
         P101_ERROR_RAISE_ERRNO(err, EFBIG);
@@ -674,6 +660,64 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
         }
         model->findings         = grown;
         model->finding_capacity = capacity;
+    }
+    return 0;
+}
+
+static int add_leak_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_lifecycle_entry *entry)
+{
+    struct p101_tool_event_lifecycle_finding *finding;
+    char                                     *resource_class;
+    char                                     *resource_id;
+    char                                     *function_name;
+    char                                     *file_name;
+
+    if(ensure_finding_capacity(err, model) != 0)
+    {
+        return -1;
+    }
+
+    resource_class = copy_text(err, entry->resource_class);
+    resource_id    = copy_text(err, entry->resource_id);
+    function_name  = copy_text(err, entry->acquired_function_name);
+    file_name      = copy_text(err, entry->acquired_file_name);
+    if(resource_class == NULL || resource_id == NULL || function_name == NULL || file_name == NULL)
+    {
+        free(resource_class);
+        free(resource_id);
+        free(function_name);
+        free(file_name);
+        return -1;
+    }
+
+    finding = &model->findings[model->finding_count++];
+    memset(finding, 0, sizeof(*finding));
+    finding->kind           = P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK;
+    finding->origin_kind    = entry->origin_kind;
+    finding->pid            = entry->pid;
+    finding->context_id     = entry->acquired_context_id;
+    finding->resource_class = resource_class;
+    finding->resource_id    = resource_id;
+    finding->sequence       = entry->acquired_sequence;
+    finding->line_number    = entry->acquired_line_number;
+    finding->function_name  = function_name;
+    finding->file_name      = file_name;
+    return 0;
+}
+
+static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous)
+{
+    struct p101_tool_event_lifecycle_finding *finding;
+    const char                               *resource_class;
+    const char                               *resource_id;
+    char                                     *resource_class_copy;
+    char                                     *resource_id_copy;
+    const char                               *previous_function_name;
+    const char                               *previous_file_name;
+
+    if(ensure_finding_capacity(err, model) != 0)
+    {
+        return -1;
     }
 
     resource_class      = previous == NULL ? record->resource_class : previous->resource_class;

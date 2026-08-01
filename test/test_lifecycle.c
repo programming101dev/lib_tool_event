@@ -91,9 +91,10 @@ static void test_public_boundaries(void)
 
 static void test_release_and_replace_findings(void)
 {
-    struct p101_error                      *err;
-    struct p101_tool_event_lifecycle_model *model;
-    struct p101_tool_event_record           record;
+    struct p101_error                               *err;
+    struct p101_tool_event_lifecycle_model          *model;
+    struct p101_tool_event_record                    record;
+    const struct p101_tool_event_lifecycle_finding *leak;
 
     model = new_model(&err);
     initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_RELEASE, "class", "stray");
@@ -128,6 +129,17 @@ static void test_release_and_replace_findings(void)
     record.related_id    = "final";
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
     EXPECT(p101_tool_event_lifecycle_finish(err, model) == 0);
+    leak = p101_tool_event_lifecycle_finding_at(model, 3U);
+    EXPECT(leak->kind == P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK);
+    EXPECT(leak->origin_kind == P101_TOOL_EVENT_RECORD_RESOURCE);
+    EXPECT(leak->pid == 1);
+    EXPECT(leak->context_id == 2U);
+    EXPECT(strcmp(leak->resource_class, "class") == 0);
+    EXPECT(strcmp(leak->resource_id, "final") == 0);
+    EXPECT(leak->sequence == 3U);
+    EXPECT(leak->line_number == 6);
+    EXPECT(strcmp(leak->function_name, "function") == 0);
+    EXPECT(strcmp(leak->file_name, "file.c") == 0);
     EXPECT(p101_tool_event_lifecycle_finish(err, model) == 0);
     p101_tool_event_lifecycle_destroy(&model);
     p101_error_destroy(err);
