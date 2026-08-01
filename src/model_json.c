@@ -3,21 +3,88 @@
 #include <p101_error/error.h>
 #include <stdio.h>
 
+#ifdef P101_TOOL_EVENT_TESTING
+    #include <stdarg.h>
+    #include <stdint.h>
+
+static size_t test_write_failure_after = SIZE_MAX;
+static size_t test_successful_writes;
+
+static int test_write_should_fail(void);
+static int test_fprintf(FILE *stream, const char *format, ...) P101_ATTR_PRINTF(2, 3);
+static int test_fputc(int character, FILE *stream);
+static int test_fputs(const char *text, FILE *stream);
+static int test_fflush(FILE *stream);
+
+void p101_tool_event_test_model_fail_write_after(size_t successful_writes)
+{
+    test_write_failure_after = successful_writes;
+    test_successful_writes   = 0U;
+}
+
+static int test_write_should_fail(void)
+{
+    if(test_successful_writes == test_write_failure_after)
+    {
+        test_write_failure_after = SIZE_MAX;
+        errno                    = EIO;
+        return 1;
+    }
+    test_successful_writes++;
+    return 0;
+}
+
+static int test_fprintf(FILE *stream, const char *format, ...)
+{
+    int     result;
+    va_list arguments;
+
+    if(test_write_should_fail() != 0)
+    {
+        return -1;
+    }
+    va_start(arguments, format);
+    result = vfprintf(stream, format, arguments);
+    va_end(arguments);
+    return result;
+}
+
+static int test_fputc(int character, FILE *stream)
+{
+    return test_write_should_fail() != 0 ? EOF : fputc(character, stream);
+}
+
+static int test_fputs(const char *text, FILE *stream)
+{
+    return test_write_should_fail() != 0 ? EOF : fputs(text, stream);
+}
+
+static int test_fflush(FILE *stream)
+{
+    return test_write_should_fail() != 0 ? EOF : fflush(stream);
+}
+
+    #define fprintf test_fprintf
+    #define fputc test_fputc
+    #define fputs test_fputs
+    #define fflush test_fflush
+#endif
+
 enum
 {
     JSON_CONTROL_CHARACTER_LIMIT = 0x20U
 };
 
-static void        write_json_string(FILE *stream, const char *text);
-static void        write_source(FILE *stream, const struct p101_tool_model_node *node);
-static void        write_time(FILE *stream, const struct p101_tool_model_node *node);
-static void        write_resource_fields(FILE *stream, const struct p101_tool_model_node *node);
-static void        write_node(FILE *stream, const struct p101_tool_model_node *node);
-static void        write_nodes(FILE *stream, const struct p101_tool_model *model);
-static void        write_edges(FILE *stream, const struct p101_tool_model *model);
+static int         write_json_string(FILE *stream, const char *text);
+static int         write_source(FILE *stream, const struct p101_tool_model_node *node);
+static int         write_time(FILE *stream, const struct p101_tool_model_node *node);
+static int         write_resource_fields(FILE *stream, const struct p101_tool_model_node *node);
+static int         write_node(FILE *stream, const struct p101_tool_model_node *node);
+static int         write_nodes(FILE *stream, const struct p101_tool_model *model);
+static int         write_edges(FILE *stream, const struct p101_tool_model *model);
 static const char *node_kind_name(const struct p101_tool_model_node *node);
 static const char *edge_kind_name(p101_tool_model_edge_kind kind);
-static void        write_node_id(FILE *stream, const struct p101_tool_model_node *node);
+static int         write_node_id(FILE *stream, const struct p101_tool_model_node *node);
 static const char *fd_kind_name(p101_tool_event_fd_kind kind);
 static const char *alloc_kind_name(p101_tool_event_alloc_kind kind);
 static const char *resource_operation_name(p101_tool_event_resource_kind kind);
@@ -45,21 +112,17 @@ int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struc
             resources++;
         }
     }
-    (void)fprintf(stream,
-                  "{\n"
-                  "  \"schema\": \"p101-run-model-v1\",\n"
-                  "  \"event_schema\": \"%s\",\n"
-                  "  \"identity_policy\": \"pid-context-event-sequence-kind\",\n"
-                  "  \"ordering\": \"causal-edges-with-per-context-sequence-and-observed-timestamps\",\n"
-                  "  \"summary\": {\"call_nodes\": %zu, \"resource_nodes\": %zu},\n",
-                  P101_TOOL_EVENT_SCHEMA_NAME,
-                  calls,
-                  resources);
-    write_nodes(stream, model);
-    (void)fputs(",\n", stream);
-    write_edges(stream, model);
-    (void)fputs("\n}\n", stream);
-    if(fflush(stream) != 0)
+    if(fprintf(stream,
+               "{\n"
+               "  \"schema\": \"p101-run-model-v1\",\n"
+               "  \"event_schema\": \"%s\",\n"
+               "  \"identity_policy\": \"pid-context-event-sequence-kind\",\n"
+               "  \"ordering\": \"causal-edges-with-per-context-sequence-and-observed-timestamps\",\n"
+               "  \"summary\": {\"call_nodes\": %zu, \"resource_nodes\": %zu},\n",
+               P101_TOOL_EVENT_SCHEMA_NAME,
+               calls,
+               resources) < 0 ||
+       write_nodes(stream, model) != 0 || fputs(",\n", stream) == EOF || write_edges(stream, model) != 0 || fputs("\n}\n", stream) == EOF || fflush(stream) != 0)
     {
         P101_ERROR_RAISE_ERRNO(err, EIO);
         return -1;
@@ -168,200 +231,214 @@ static const char *edge_kind_name(p101_tool_model_edge_kind kind)
 #endif
 }
 
-static void write_node_id(FILE *stream, const struct p101_tool_model_node *node)
+static int write_node_id(FILE *stream, const struct p101_tool_model_node *node)
 {
     const char *domain;
 
     domain = node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource";
-    (void)fprintf(stream, "\"%s:%ld:%zu:%zu:%s\"", domain, node->pid, node->context_id, node->sequence, node_kind_name(node));
+    return fprintf(stream, "\"%s:%ld:%zu:%zu:%s\"", domain, node->pid, node->context_id, node->sequence, node_kind_name(node)) < 0 ? -1 : 0;
 }
 
-static void write_nodes(FILE *stream, const struct p101_tool_model *model)
+static int write_nodes(FILE *stream, const struct p101_tool_model *model)
 {
-    (void)fputs("  \"nodes\": [\n", stream);
+    if(fputs("  \"nodes\": [\n", stream) == EOF)
+    {
+        return -1;
+    }
     for(size_t index = 0U; index < model->node_count; index++)
     {
-        if(index > 0U)
+        if((index > 0U && fputs(",\n", stream) == EOF) || write_node(stream, &model->nodes[index].value) != 0)
         {
-            (void)fputs(",\n", stream);
+            return -1;
         }
-        write_node(stream, &model->nodes[index].value);
     }
-    (void)fputs("\n  ]", stream);
+    return fputs("\n  ]", stream) == EOF ? -1 : 0;
 }
 
-static void write_node(FILE *stream, const struct p101_tool_model_node *node)
+static int write_node(FILE *stream, const struct p101_tool_model_node *node)
 {
-    (void)fputs("    {\"id\":", stream);
-    write_node_id(stream, node);
-    (void)fprintf(stream, ",\"domain\":\"%s\",\"kind\":", node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource");
-    write_json_string(stream, node_kind_name(node));
-    (void)fprintf(stream, ",\"pid\":%ld,\"context\":%zu,\"sequence\":%zu", node->pid, node->context_id, node->sequence);
+    if(fputs("    {\"id\":", stream) == EOF || write_node_id(stream, node) != 0 || fprintf(stream, ",\"domain\":\"%s\",\"kind\":", node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource") < 0 || write_json_string(stream, node_kind_name(node)) != 0 ||
+       fprintf(stream, ",\"pid\":%ld,\"context\":%zu,\"sequence\":%zu", node->pid, node->context_id, node->sequence) < 0)
+    {
+        return -1;
+    }
     if(node->domain == P101_TOOL_MODEL_NODE_CALL)
     {
-        (void)fputs(",\"name\":", stream);
-        write_json_string(stream, node->call_name);
-        (void)fputs(",\"arguments\":", stream);
-        write_json_string(stream, node->arguments);
-        (void)fputs(",\"result\":", stream);
-        write_json_string(stream, node->result);
+        if(fputs(",\"name\":", stream) == EOF || write_json_string(stream, node->call_name) != 0 || fputs(",\"arguments\":", stream) == EOF || write_json_string(stream, node->arguments) != 0 || fputs(",\"result\":", stream) == EOF ||
+           write_json_string(stream, node->result) != 0)
+        {
+            return -1;
+        }
     }
-    else
+    else if(write_resource_fields(stream, node) != 0)
     {
-        write_resource_fields(stream, node);
+        return -1;
     }
-    (void)fputc(',', stream);
-    write_time(stream, node);
-    (void)fputc(',', stream);
-    write_source(stream, node);
-    (void)fputc('}', stream);
+    return fputc(',', stream) == EOF || write_time(stream, node) != 0 || fputc(',', stream) == EOF || write_source(stream, node) != 0 || fputc('}', stream) == EOF ? -1 : 0;
 }
 
-static void write_resource_fields(FILE *stream, const struct p101_tool_model_node *node)
+static int write_resource_fields(FILE *stream, const struct p101_tool_model_node *node)
 {
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
-        (void)fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd);
+        return fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd) < 0 ? -1 : 0;
     }
-    else if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
+    if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
-        (void)fputs(",\"resource_class\":\"allocation\",\"resource_identity\":", stream);
-        write_json_string(stream, node->ptr);
+        if(fputs(",\"resource_class\":\"allocation\",\"resource_identity\":", stream) == EOF || write_json_string(stream, node->ptr) != 0)
+        {
+            return -1;
+        }
         if(node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC)
         {
-            (void)fputs(",\"related_identity\":", stream);
-            write_json_string(stream, node->new_ptr);
+            if(fputs(",\"related_identity\":", stream) == EOF || write_json_string(stream, node->new_ptr) != 0)
+            {
+                return -1;
+            }
         }
-        (void)fprintf(stream, ",\"size\":%zu", node->size);
+        return fprintf(stream, ",\"size\":%zu", node->size) < 0 ? -1 : 0;
     }
-    else if(node->record_kind == P101_TOOL_EVENT_RECORD_FORK || node->record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
+    if(node->record_kind == P101_TOOL_EVENT_RECORD_FORK || node->record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
     {
-        (void)fprintf(stream, ",\"child_pid\":%ld", node->child_pid);
+        if(fprintf(stream, ",\"child_pid\":%ld", node->child_pid) < 0)
+        {
+            return -1;
+        }
         if(node->record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
         {
-            (void)fputs(",\"target\":", stream);
-            write_json_string(stream, node->target);
+            return fputs(",\"target\":", stream) == EOF || write_json_string(stream, node->target) != 0 ? -1 : 0;
         }
+        return 0;
     }
-    else if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC || node->record_kind == P101_TOOL_EVENT_RECORD_EXEC_FAIL)
+    if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC || node->record_kind == P101_TOOL_EVENT_RECORD_EXEC_FAIL)
     {
-        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC)
+        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC && fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd) < 0)
         {
-            (void)fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd);
+            return -1;
         }
-        (void)fputs(",\"target\":", stream);
-        write_json_string(stream, node->target);
-        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC)
+        if(fputs(",\"target\":", stream) == EOF || write_json_string(stream, node->target) != 0)
         {
-            (void)fprintf(stream, ",\"cloexec\":%s", (int)node->cloexec ? "true" : "false");
+            return -1;
         }
+        return node->record_kind == P101_TOOL_EVENT_RECORD_EXEC && fprintf(stream, ",\"cloexec\":%s", (int)node->cloexec ? "true" : "false") < 0 ? -1 : 0;
     }
-    else
-    {
-        (void)fputs(",\"operation\":", stream);
-        write_json_string(stream, resource_operation_name(node->resource_kind));
-        (void)fputs(",\"resource_class\":", stream);
-        write_json_string(stream, node->resource_class);
-        (void)fputs(",\"resource_identity\":", stream);
-        write_json_string(stream, node->resource_id);
-        (void)fputs(",\"related_identity\":", stream);
-        write_json_string(stream, node->related_id);
-        (void)fputs(",\"metadata\":", stream);
-        write_json_string(stream, node->metadata);
-        (void)fprintf(stream, ",\"size\":%zu", node->size);
-    }
+
+    return fputs(",\"operation\":", stream) == EOF || write_json_string(stream, resource_operation_name(node->resource_kind)) != 0 || fputs(",\"resource_class\":", stream) == EOF || write_json_string(stream, node->resource_class) != 0 ||
+                   fputs(",\"resource_identity\":", stream) == EOF || write_json_string(stream, node->resource_id) != 0 || fputs(",\"related_identity\":", stream) == EOF || write_json_string(stream, node->related_id) != 0 ||
+                   fputs(",\"metadata\":", stream) == EOF || write_json_string(stream, node->metadata) != 0 || fprintf(stream, ",\"size\":%zu", node->size) < 0 ?
+               -1 :
+               0;
 }
 
-static void write_edges(FILE *stream, const struct p101_tool_model *model)
+static int write_edges(FILE *stream, const struct p101_tool_model *model)
 {
-    (void)fputs("  \"edges\": [\n", stream);
+    if(fputs("  \"edges\": [\n", stream) == EOF)
+    {
+        return -1;
+    }
     for(size_t index = 0U; index < model->edge_count; index++)
     {
         const struct p101_tool_model_edge *edge;
 
         edge = &model->edges[index];
-        if(index > 0U)
+        if((index > 0U && fputs(",\n", stream) == EOF) || fputs("    {\"kind\":", stream) == EOF || write_json_string(stream, edge_kind_name(edge->kind)) != 0 || fputs(",\"from\":", stream) == EOF ||
+           write_node_id(stream, &model->nodes[edge->from].value) != 0 || fputs(",\"to\":", stream) == EOF || write_node_id(stream, &model->nodes[edge->to].value) != 0 || fputc('}', stream) == EOF)
         {
-            (void)fputs(",\n", stream);
+            return -1;
         }
-        (void)fputs("    {\"kind\":", stream);
-        write_json_string(stream, edge_kind_name(edge->kind));
-        (void)fputs(",\"from\":", stream);
-        write_node_id(stream, &model->nodes[edge->from].value);
-        (void)fputs(",\"to\":", stream);
-        write_node_id(stream, &model->nodes[edge->to].value);
-        (void)fputc('}', stream);
     }
-    (void)fputs("\n  ]", stream);
+    return fputs("\n  ]", stream) == EOF ? -1 : 0;
 }
 
-static void write_time(FILE *stream, const struct p101_tool_model_node *node)
+static int write_time(FILE *stream, const struct p101_tool_model_node *node)
 {
-    (void)fputs("\"monotonic_ns\":", stream);
+    if(fputs("\"monotonic_ns\":", stream) == EOF)
+    {
+        return -1;
+    }
     if(node->monotonic_ns_available)
     {
-        (void)fprintf(stream, "%zu", node->monotonic_ns);
+        if(fprintf(stream, "%zu", node->monotonic_ns) < 0)
+        {
+            return -1;
+        }
     }
-    else
+    else if(fputs("null", stream) == EOF)
     {
-        (void)fputs("null", stream);
+        return -1;
     }
-    (void)fputs(",\"wall_unix_ns\":", stream);
+    if(fputs(",\"wall_unix_ns\":", stream) == EOF)
+    {
+        return -1;
+    }
     if(node->wall_unix_ns_available)
     {
-        (void)fprintf(stream, "%zu", node->wall_unix_ns);
+        return fprintf(stream, "%zu", node->wall_unix_ns) < 0 ? -1 : 0;
     }
-    else
-    {
-        (void)fputs("null", stream);
-    }
+    return fputs("null", stream) == EOF ? -1 : 0;
 }
 
-static void write_source(FILE *stream, const struct p101_tool_model_node *node)
+static int write_source(FILE *stream, const struct p101_tool_model_node *node)
 {
-    (void)fputs("\"source\":{\"file\":", stream);
-    write_json_string(stream, node->file_name);
-    (void)fprintf(stream, ",\"line\":%d,\"function\":", node->line_number);
-    write_json_string(stream, node->function_name);
-    (void)fputc('}', stream);
+    return fputs("\"source\":{\"file\":", stream) == EOF || write_json_string(stream, node->file_name) != 0 || fprintf(stream, ",\"line\":%d,\"function\":", node->line_number) < 0 || write_json_string(stream, node->function_name) != 0 ||
+                   fputc('}', stream) == EOF ?
+               -1 :
+               0;
 }
 
-static void write_json_string(FILE *stream, const char *text)
+static int write_json_string(FILE *stream, const char *text)
 {
     const unsigned char *cursor;
 
-    (void)fputc('"', stream);
+    if(fputc('"', stream) == EOF)
+    {
+        return -1;
+    }
     cursor = (const unsigned char *)text;
     while(*cursor != '\0')
     {
         if(*cursor == '"' || *cursor == '\\')
         {
-            (void)fputc('\\', stream);
-            (void)fputc((int)*cursor, stream);
+            if(fputc('\\', stream) == EOF || fputc((int)*cursor, stream) == EOF)
+            {
+                return -1;
+            }
         }
         else if(*cursor == '\n')
         {
-            (void)fputs("\\n", stream);
+            if(fputs("\\n", stream) == EOF)
+            {
+                return -1;
+            }
         }
         else if(*cursor == '\r')
         {
-            (void)fputs("\\r", stream);
+            if(fputs("\\r", stream) == EOF)
+            {
+                return -1;
+            }
         }
         else if(*cursor == '\t')
         {
-            (void)fputs("\\t", stream);
+            if(fputs("\\t", stream) == EOF)
+            {
+                return -1;
+            }
         }
         else if(*cursor < JSON_CONTROL_CHARACTER_LIMIT)
         {
-            (void)fprintf(stream, "\\u%04x", (unsigned int)*cursor);
+            if(fprintf(stream, "\\u%04x", (unsigned int)*cursor) < 0)
+            {
+                return -1;
+            }
         }
-        else
+        else if(fputc((int)*cursor, stream) == EOF)
         {
-            (void)fputc((int)*cursor, stream);
+            return -1;
         }
         cursor++;
     }
-    (void)fputc('"', stream);
+    return fputc('"', stream) == EOF ? -1 : 0;
 }
 
 static const char *fd_kind_name(p101_tool_event_fd_kind kind)

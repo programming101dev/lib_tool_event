@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <p101_error/error.h>
 #include <p101_tool_event/model.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -9,15 +10,16 @@ static int failures;
 
 extern void p101_tool_event_test_model_fail_allocation_after(size_t successful_allocations);
 extern void p101_tool_event_test_model_set_allocation_failure_errno(int errnum);
+extern void p101_tool_event_test_model_fail_write_after(size_t successful_writes);
 
-#define EXPECT(condition)             \
-    do                                \
-    {                                 \
-        if(!(condition))              \
-        {                             \
-            (void)fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, #condition); \
-            failures++;               \
-        }                             \
+#define EXPECT(condition)                                                                                                                                                                                                                                          \
+    do                                                                                                                                                                                                                                                             \
+    {                                                                                                                                                                                                                                                              \
+        if(!(condition))                                                                                                                                                                                                                                           \
+        {                                                                                                                                                                                                                                                          \
+            (void)fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, #condition);                                                                                                                                                                 \
+            failures++;                                                                                                                                                                                                                                            \
+        }                                                                                                                                                                                                                                                          \
     } while(0)
 
 static struct p101_tool_event_record base_record(p101_tool_event_record_kind kind, size_t sequence)
@@ -25,16 +27,16 @@ static struct p101_tool_event_record base_record(p101_tool_event_record_kind kin
     struct p101_tool_event_record record;
 
     memset(&record, 0, sizeof(record));
-    record.version       = P101_TOOL_EVENT_LOG_VERSION;
-    record.record_kind   = kind;
-    record.pid           = 41;
-    record.context_id    = 7U;
-    record.sequence      = sequence;
-    record.function_name = "demo";
-    record.file_name     = "demo.c";
-    record.line_number   = 12;
-    record.monotonic_ns  = sequence * 10U;
-    record.wall_unix_ns  = sequence * 20U;
+    record.version                = P101_TOOL_EVENT_LOG_VERSION;
+    record.record_kind            = kind;
+    record.pid                    = 41;
+    record.context_id             = 7U;
+    record.sequence               = sequence;
+    record.function_name          = "demo";
+    record.file_name              = "demo.c";
+    record.line_number            = 12;
+    record.monotonic_ns           = sequence * 10U;
+    record.wall_unix_ns           = sequence * 20U;
     record.monotonic_ns_available = 1;
     record.wall_unix_ns_available = sequence % 2U == 0U ? 1 : 0;
     return record;
@@ -153,12 +155,12 @@ static void test_invalid_operations(void)
 
 static void test_all_event_kinds_and_growth(void)
 {
-    struct p101_error             *err;
-    struct p101_tool_model        *model;
-    struct p101_tool_event_record  record;
-    FILE                          *stream;
-    char                           text[16384];
-    size_t                         bytes;
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
+    FILE                         *stream;
+    char                          text[16384];
+    size_t                        bytes;
 
     err   = p101_error_create(false);
     model = p101_tool_model_create(err);
@@ -227,13 +229,13 @@ static void test_all_event_kinds_and_growth(void)
     record.child_pid = 43;
     record.target    = "worker";
     ingest_record(err, model, &record);
-    record          = base_record(P101_TOOL_EVENT_RECORD_EXEC, 14U);
-    record.fd       = 9;
-    record.cloexec  = 1;
-    record.target   = "child";
+    record         = base_record(P101_TOOL_EVENT_RECORD_EXEC, 14U);
+    record.fd      = 9;
+    record.cloexec = 1;
+    record.target  = "child";
     ingest_record(err, model, &record);
-    record        = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 15U);
-    record.target = "missing";
+    record                        = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 15U);
+    record.target                 = "missing";
     record.monotonic_ns_available = 0;
     ingest_record(err, model, &record);
 
@@ -248,12 +250,12 @@ static void test_all_event_kinds_and_growth(void)
     record.target = "after-call";
     ingest_record(err, model, &record);
 
-    record         = base_record(P101_TOOL_EVENT_RECORD_CALL, 1U);
-    record.pid     = 42;
+    record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 1U);
+    record.pid       = 42;
     record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
     record.call_name = "child_call";
     record.arguments = "";
-    record.result = "";
+    record.result    = "";
     ingest_record(err, model, &record);
     record         = base_record(P101_TOOL_EVENT_RECORD_FD, 1U);
     record.pid     = 43;
@@ -277,19 +279,43 @@ static void test_all_event_kinds_and_growth(void)
     EXPECT(strstr(text, "\"kind\":\"call-parent\"") != NULL);
     EXPECT(strstr(text, "\"kind\":\"process-child-event\"") != NULL);
     fclose(stream);
+
+    for(size_t successful_writes = 0U; successful_writes < 4096U; successful_writes++)
+    {
+        int result;
+
+        stream = tmpfile();
+        EXPECT(stream != NULL);
+        p101_tool_event_test_model_fail_write_after(successful_writes);
+        result = p101_tool_model_write_json(err, stream, model);
+        fclose(stream);
+        if(result == 0)
+        {
+            EXPECT(successful_writes > 0U);
+            p101_tool_event_test_model_fail_write_after(SIZE_MAX);
+            break;
+        }
+        EXPECT(p101_error_is_errno(err, EIO));
+        p101_error_reset(err);
+        if(successful_writes == 4095U)
+        {
+            EXPECT(0);
+        }
+    }
+
     p101_tool_model_destroy(&model);
     p101_error_destroy(err);
 }
 
 static void test_empty_complete_and_capacity_growth(void)
 {
-    struct p101_error             *err;
-    struct p101_tool_model        *model;
-    struct p101_tool_event_record  record;
-    FILE                          *stream;
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
+    FILE                         *stream;
 
-    err   = p101_error_create(false);
-    model = p101_tool_model_create(err);
+    err    = p101_error_create(false);
+    model  = p101_tool_model_create(err);
     record = base_record(P101_TOOL_EVENT_RECORD_COMPLETE, 1U);
     EXPECT(p101_tool_model_ingest(err, model, &record) == 0);
     for(size_t index = 1U; index <= 40U; index++)
@@ -318,10 +344,10 @@ static void test_empty_complete_and_capacity_growth(void)
 
 static void test_model_allocation_and_output_failures(void)
 {
-    struct p101_error             *err;
-    struct p101_tool_model        *model;
-    struct p101_tool_event_record  record;
-    FILE                          *stream;
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
+    FILE                         *stream;
 
     err = p101_error_create(false);
     p101_tool_event_test_model_fail_allocation_after(0U);
@@ -329,8 +355,8 @@ static void test_model_allocation_and_output_failures(void)
     EXPECT(p101_error_is_errno(err, ENOMEM));
     p101_error_reset(err);
 
-    model  = p101_tool_model_create(err);
-    record = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 1U);
+    model         = p101_tool_model_create(err);
+    record        = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 1U);
     record.target = "target";
     p101_tool_event_test_model_fail_allocation_after(0U);
     EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
@@ -410,7 +436,7 @@ static void test_model_allocation_and_output_failures(void)
     {
         model = p101_tool_model_create(err);
         EXPECT(model != NULL);
-        record        = base_record(P101_TOOL_EVENT_RECORD_RESOURCE, successful_allocations + 10U);
+        record                = base_record(P101_TOOL_EVENT_RECORD_RESOURCE, successful_allocations + 10U);
         record.resource_kind  = P101_TOOL_EVENT_RESOURCE_ACQUIRE;
         record.function_name  = "function";
         record.file_name      = "file";
@@ -475,9 +501,9 @@ static void expect_first_edge_allocation_failure(struct p101_error *err, struct 
 
 static void test_model_edge_allocation_failures(void)
 {
-    struct p101_error             *err;
-    struct p101_tool_model        *model;
-    struct p101_tool_event_record  record;
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
 
     err = p101_error_create(false);
 
@@ -510,11 +536,11 @@ static void test_model_edge_allocation_failures(void)
 
 static void test_model_branch_shapes(void)
 {
-    static char *const null_pointers[] = {"", "-", "0", "0x0", "(nil)", "NULL"};
-    struct p101_error             *err;
-    struct p101_tool_model        *model;
-    struct p101_tool_event_record  record;
-    size_t                         sequence;
+    static char *const            null_pointers[] = {"", "-", "0", "0x0", "(nil)", "NULL"};
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
+    size_t                        sequence;
 
     err   = p101_error_create(false);
     model = p101_tool_model_create(err);
@@ -544,21 +570,21 @@ static void test_model_branch_shapes(void)
     record.call_kind = P101_TOOL_EVENT_CALL_ENTER;
     record.call_name = "future";
     ingest_record(err, model, &record);
-    record           = base_record(P101_TOOL_EVENT_RECORD_FD, 20U);
-    record.fd_kind   = P101_TOOL_EVENT_FD_OPEN;
-    record.fd        = 3;
+    record         = base_record(P101_TOOL_EVENT_RECORD_FD, 20U);
+    record.fd_kind = P101_TOOL_EVENT_FD_OPEN;
+    record.fd      = 3;
     ingest_record(err, model, &record);
     record           = base_record(P101_TOOL_EVENT_RECORD_CALL, 21U);
     record.call_kind = P101_TOOL_EVENT_CALL_EXIT;
     record.call_name = "not-an-enter";
     record.result    = "0";
     ingest_record(err, model, &record);
-    record           = base_record(P101_TOOL_EVENT_RECORD_FD, 22U);
-    record.fd_kind   = P101_TOOL_EVENT_FD_CLOSE;
-    record.fd        = 4;
+    record         = base_record(P101_TOOL_EVENT_RECORD_FD, 22U);
+    record.fd_kind = P101_TOOL_EVENT_FD_CLOSE;
+    record.fd      = 4;
     ingest_record(err, model, &record);
     record.sequence = 23U;
-    record.fd        = 3;
+    record.fd       = 3;
     ingest_record(err, model, &record);
     record.sequence = 24U;
     ingest_record(err, model, &record);
@@ -637,8 +663,8 @@ static void test_model_branch_shapes(void)
     record.sequence  = 10U;
     record.call_name = "earlier";
     ingest_record(err, model, &record);
-    record           = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 30U);
-    record.target    = "child";
+    record        = base_record(P101_TOOL_EVENT_RECORD_EXEC_FAIL, 30U);
+    record.target = "child";
     ingest_record(err, model, &record);
     EXPECT(p101_tool_model_finish(err, model) == 0);
     p101_tool_model_destroy(&model);
