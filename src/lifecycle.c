@@ -509,14 +509,13 @@ int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_ev
 
     for(size_t i = 0U; i < model->entry_count; i++)
     {
-        struct p101_tool_event_record record;
+        struct p101_tool_event_record record = {0};
 
         model->entries[i].exec_pending = false;
         if(!model->entries[i].live)
         {
             continue;
         }
-        memset(&record, 0, sizeof(record));
         record.pid            = model->entries[i].pid;
         record.record_kind    = model->entries[i].origin_kind;
         record.context_id     = model->entries[i].acquired_context_id;
