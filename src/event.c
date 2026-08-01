@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <p101_error/attributes.h>
+#include <p101_record/record.h>
 #include <p101_tool_event/event.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -209,11 +210,11 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
     }
 
     cursor = line;
-    magic  = p101_tool_event_split(&cursor);
+    magic  = p101_record_split(&cursor);
     count  = 0U;
     while(cursor != NULL && count < MAX_FIELDS)
     {
-        fields[count++] = p101_tool_event_split(&cursor);
+        fields[count++] = p101_record_split(&cursor);
     }
     if(cursor != NULL)
     {
@@ -475,111 +476,6 @@ const char *p101_tool_event_parse_status_name(p101_tool_event_parse_status statu
 #endif
 }
 
-char *p101_tool_event_split(char **cursor)
-{
-    char *start;
-    char *tab;
-
-    if(cursor == NULL || *cursor == NULL)
-    {
-        return NULL;
-    }
-
-    start = *cursor;
-    tab   = start;
-    while(*tab != '\0' && *tab != '\t')
-    {
-        tab++;
-    }
-
-    if(*tab == '\0')
-    {
-        *cursor = NULL;
-    }
-    else
-    {
-        *tab    = '\0';
-        *cursor = tab + 1;
-    }
-    return start;
-}
-
-void p101_tool_event_unescape_field(char *field)
-{
-    char *read_cursor;
-    char *write_cursor;
-
-    if(field == NULL)
-    {
-        return;
-    }
-
-    read_cursor  = field;
-    write_cursor = field;
-    while(*read_cursor != '\0')
-    {
-        if(read_cursor[0] == '\\' && read_cursor[1] != '\0')
-        {
-            read_cursor++;
-            if(*read_cursor == 't')
-            {
-                *write_cursor = '\t';
-            }
-            else if(*read_cursor == 'n')
-            {
-                *write_cursor = '\n';
-            }
-            else if(*read_cursor == 'r')
-            {
-                *write_cursor = '\r';
-            }
-            else
-            {
-                *write_cursor = *read_cursor;
-            }
-            read_cursor++;
-            write_cursor++;
-        }
-        else
-        {
-            *write_cursor++ = *read_cursor++;
-        }
-    }
-    *write_cursor = '\0';
-}
-
-int p101_tool_event_parse_size_field(const char *text, size_t *out)
-{
-    const char *cursor;
-    size_t      value;
-
-    if(text == NULL || out == NULL || *text == '\0')
-    {
-        return 0;
-    }
-
-    cursor = text;
-    value  = 0U;
-    while(*cursor != '\0')
-    {
-        size_t digit;
-
-        if(*cursor < '0' || *cursor > '9')
-        {
-            return 0;
-        }
-        digit = (size_t)(*cursor - '0');
-        if(value > (SIZE_MAX - digit) / (size_t)NUMBER_BASE)
-        {
-            return 0;
-        }
-        value = (value * (size_t)NUMBER_BASE) + digit;
-        cursor++;
-    }
-    *out = value;
-    return 1;
-}
-
 static int parse_long_field(const char *text, long min, long max, long *out)
 {
     char *end;
@@ -616,7 +512,7 @@ static int parse_optional_size_field(const char *text, size_t *out, int *availab
     {
         return 1;
     }
-    if(!p101_tool_event_parse_size_field(text, out))
+    if(!p101_record_parse_size(text, out))
     {
         return 0;
     }
@@ -642,12 +538,12 @@ static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
 
-    if(!p101_tool_event_parse_size_field(fields[CONTEXT_INDEX], &record->context_id))
+    if(!p101_record_parse_size(fields[CONTEXT_INDEX], &record->context_id))
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
     *payload = METADATA_FIELDS;
-    if(!p101_tool_event_parse_size_field(fields[SEQUENCE_INDEX], &record->sequence) || !parse_optional_size_field(fields[MONOTONIC_INDEX], &record->monotonic_ns, &record->monotonic_ns_available) ||
+    if(!p101_record_parse_size(fields[SEQUENCE_INDEX], &record->sequence) || !parse_optional_size_field(fields[MONOTONIC_INDEX], &record->monotonic_ns, &record->monotonic_ns_available) ||
        !parse_optional_size_field(fields[WALL_INDEX], &record->wall_unix_ns, &record->wall_unix_ns_available))
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
@@ -1014,7 +910,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         }
         record->ptr     = fields[payload + 1U];
         record->new_ptr = strcmp(fields[payload + 2U], "-") == 0 ? NULL : fields[payload + 2U];
-        if(!p101_tool_event_parse_size_field(fields[payload + 3U], &record->size) || !parse_long_field(fields[payload + 4U], 0, INT_MAX, &value))
+        if(!p101_record_parse_size(fields[payload + 3U], &record->size) || !parse_long_field(fields[payload + 4U], 0, INT_MAX, &value))
         {
             return P101_TOOL_EVENT_PARSE_MALFORMED;
         }
@@ -1141,7 +1037,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         record->resource_class = fields[payload + 1U];
         record->resource_id    = fields[payload + 2U];
         record->related_id     = strcmp(fields[payload + 3U], "-") == 0 ? NULL : fields[payload + 3U];
-        if(!p101_tool_event_parse_size_field(fields[payload + 4U], &record->size) || !parse_long_field(fields[payload + RESOURCE_LINE_INDEX], 0, INT_MAX, &value))
+        if(!p101_record_parse_size(fields[payload + 4U], &record->size) || !parse_long_field(fields[payload + RESOURCE_LINE_INDEX], 0, INT_MAX, &value))
         {
             return P101_TOOL_EVENT_PARSE_MALFORMED;
         }
@@ -1155,7 +1051,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
 
     if(strcmp(magic, "P101COMPLETE") == 0)
     {
-        if(count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_tool_event_parse_size_field(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
+        if(count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_record_parse_size(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
         {
             return P101_TOOL_EVENT_PARSE_MALFORMED;
         }
@@ -1178,18 +1074,18 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
 
 static void unescape_record(struct p101_tool_event_record *record)
 {
-    p101_tool_event_unescape_field(record->ptr);
-    p101_tool_event_unescape_field(record->new_ptr);
-    p101_tool_event_unescape_field(record->target);
-    p101_tool_event_unescape_field(record->resource_class);
-    p101_tool_event_unescape_field(record->resource_id);
-    p101_tool_event_unescape_field(record->related_id);
-    p101_tool_event_unescape_field(record->metadata);
-    p101_tool_event_unescape_field(record->function_name);
-    p101_tool_event_unescape_field(record->call_name);
-    p101_tool_event_unescape_field(record->arguments);
-    p101_tool_event_unescape_field(record->result);
-    p101_tool_event_unescape_field(record->file_name);
+    p101_record_unescape_field(record->ptr);
+    p101_record_unescape_field(record->new_ptr);
+    p101_record_unescape_field(record->target);
+    p101_record_unescape_field(record->resource_class);
+    p101_record_unescape_field(record->resource_id);
+    p101_record_unescape_field(record->related_id);
+    p101_record_unescape_field(record->metadata);
+    p101_record_unescape_field(record->function_name);
+    p101_record_unescape_field(record->call_name);
+    p101_record_unescape_field(record->arguments);
+    p101_record_unescape_field(record->result);
+    p101_record_unescape_field(record->file_name);
 }
 
 #ifdef P101_TOOL_EVENT_TESTING

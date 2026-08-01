@@ -17,6 +17,7 @@ if(P101_TEST_COVERAGE)
 endif()
 
 add_library(p101_tool_event_under_test STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/record.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/event.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/lifecycle.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/model.c"

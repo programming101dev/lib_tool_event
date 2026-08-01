@@ -184,9 +184,6 @@ extern "C"
     int                          p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *record);
     int                          p101_tool_event_line_is_ours(const char *line);
     const char                  *p101_tool_event_parse_status_name(p101_tool_event_parse_status status);
-    char                        *p101_tool_event_split(char **cursor);
-    void                         p101_tool_event_unescape_field(char *field);
-    int                          p101_tool_event_parse_size_field(const char *text, size_t *out);
     int                          p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *health, const struct p101_tool_event_record *record);
     int                          p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health);
     size_t                       p101_tool_event_stream_health_incomplete_producers(const struct p101_tool_event_stream_health *health);

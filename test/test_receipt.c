@@ -10,6 +10,8 @@
 static int failures;
 
 extern void p101_tool_event_test_force_close_error(int error_number);
+extern void p101_tool_event_test_force_receipt_failure(int stage);
+extern int  p101_tool_event_test_put_json_string(FILE *stream, const char *value);
 
 #define EXPECT(condition)                                                                                                                                                                                                                                          \
     do                                                                                                                                                                                                                                                             \
@@ -24,6 +26,154 @@ static void reset_error(struct p101_error **err)
 {
     p101_error_destroy(*err);
     *err = p101_error_create(false);
+}
+
+static void test_tool_outcomes(void)
+{
+    static const char *const names[] = {
+        "clean",
+        "findings",
+        "refused",
+        "incomplete",
+        "unsupported",
+        "tool-error",
+    };
+
+    for(size_t index = 0U; index < sizeof(names) / sizeof(names[0]); index++)
+    {
+        p101_tool_outcome outcome;
+
+        outcome = (p101_tool_outcome)index;
+        EXPECT(strcmp(p101_tool_outcome_name(outcome), names[index]) == 0);
+        EXPECT(p101_tool_outcome_exit_status(outcome) == (index == 0U ? 0 : (index == 1U ? 1 : 2)));
+    }
+    EXPECT(p101_tool_outcome_name((p101_tool_outcome)99) == NULL);
+    EXPECT(p101_tool_outcome_name((p101_tool_outcome)-1) == NULL);
+    EXPECT(p101_tool_outcome_exit_status((p101_tool_outcome)99) == 2);
+}
+
+static void test_run_receipt_json(void)
+{
+    struct p101_error                 *err;
+    struct p101_tool_event_fingerprint fingerprint;
+    struct p101_tool_run_receipt       receipt;
+    FILE                              *stream;
+    char                               output[2048];
+    size_t                             count;
+
+    err    = p101_error_create(false);
+    stream = tmpfile();
+    EXPECT(err != NULL);
+    EXPECT(stream != NULL);
+    fingerprint.bytes         = 12U;
+    fingerprint.records       = 2U;
+    fingerprint.fnv1a64       = UINT64_C(0x1234);
+    fingerprint.final_newline = 1;
+    receipt.tool_name         = "p101-test";
+    receipt.tool_version      = "1";
+    receipt.input_schema      = "test-v1";
+    receipt.input_identity    = "file\"\\\b\f\n\r\t\x01name";
+    receipt.outcome           = P101_TOOL_OUTCOME_FINDINGS;
+    receipt.checks_attempted  = 3U;
+    receipt.checks_completed  = 3U;
+    receipt.does_not_prove    = "external truth";
+
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, &fingerprint) == 0);
+    rewind(stream);
+    count         = fread(output, 1U, sizeof(output) - 1U, stream);
+    output[count] = '\0';
+    EXPECT(strstr(output, "\"schema\":\"p101-tool-run-receipt-v1\"") != NULL);
+    EXPECT(strstr(output, "\"outcome\":\"findings\"") != NULL);
+    EXPECT(strstr(output, "\"identity\":\"file\\\"\\\\\\b\\f\\n\\r\\t\\u0001name\"") != NULL);
+    EXPECT(strstr(output, "\"value\":\"0000000000001234\"") != NULL);
+    EXPECT(count > 0U && output[count - 1U] == '\n');
+
+    receipt.checks_completed = 4U;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.checks_completed = 3U;
+    receipt.outcome          = (p101_tool_outcome)99;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    EXPECT(p101_tool_run_receipt_write_json(err, NULL, &receipt, NULL) == -1);
+
+    fclose(stream);
+    p101_error_destroy(err);
+}
+
+static void test_run_receipt_failures(void)
+{
+    struct p101_error                 *err;
+    struct p101_tool_event_fingerprint fingerprint = {0};
+    struct p101_tool_run_receipt       receipt;
+    FILE                              *stream;
+    char                              *long_text;
+
+    err                      = p101_error_create(false);
+    receipt.tool_name        = "tool";
+    receipt.tool_version     = "1";
+    receipt.input_schema     = "schema";
+    receipt.input_identity   = "identity";
+    receipt.outcome          = P101_TOOL_OUTCOME_CLEAN;
+    receipt.checks_attempted = 1U;
+    receipt.checks_completed = 1U;
+    receipt.does_not_prove   = "limits";
+    stream                   = tmpfile();
+    EXPECT(err != NULL);
+    EXPECT(stream != NULL);
+
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, NULL, NULL) == -1);
+    reset_error(&err);
+    receipt.tool_name = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.tool_name    = "tool";
+    receipt.tool_version = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.tool_version = "1";
+    receipt.input_schema = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.input_schema   = "schema";
+    receipt.input_identity = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.input_identity = "identity";
+    receipt.does_not_prove = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.does_not_prove = "limits";
+
+    for(int stage = 1; stage <= 3; stage++)
+    {
+        p101_tool_event_test_force_receipt_failure(stage);
+        EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, &fingerprint) == -1);
+        EXPECT(p101_error_has_error(err));
+        reset_error(&err);
+    }
+
+    long_text = malloc(P101_TOOL_EVENT_RECEIPT_TEXT_MAX_BYTES + 2U);
+    EXPECT(long_text != NULL);
+    if(long_text != NULL)
+    {
+        memset(long_text, 'x', P101_TOOL_EVENT_RECEIPT_TEXT_MAX_BYTES + 1U);
+        long_text[P101_TOOL_EVENT_RECEIPT_TEXT_MAX_BYTES + 1U] = '\0';
+        EXPECT(p101_tool_event_test_put_json_string(stream, long_text) == -1);
+        free(long_text);
+    }
+    EXPECT(p101_tool_event_test_put_json_string(NULL, "value") == -1);
+    EXPECT(p101_tool_event_test_put_json_string(stream, NULL) == -1);
+
+    fclose(stream);
+    stream = fopen(__FILE__, "r");
+    EXPECT(stream != NULL);
+    if(stream != NULL)
+    {
+        EXPECT(p101_tool_event_test_put_json_string(stream, "value") == -1);
+        fclose(stream);
+    }
+    p101_error_destroy(err);
 }
 
 static void test_invalid_arguments(void)
@@ -141,6 +291,9 @@ static void test_close_failure(void)
 
 int main(void)
 {
+    test_tool_outcomes();
+    test_run_receipt_json();
+    test_run_receipt_failures();
     test_invalid_arguments();
     test_empty_and_unterminated_files();
     test_record_and_byte_limits();

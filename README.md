@@ -5,6 +5,14 @@ byte-safe line reader, the versioned TSV parser, execution-context metadata,
 generic resource records, and the policy-free lifecycle replay mechanism shared
 by runtime tools.
 
+The repository also installs the smaller `p101_record` library. Its
+`<p101_record/record.h>` API only splits, unescapes, and validates bounded
+tab-delimited fields; it has no event kinds, schema versions, or lifecycle
+policy. This is an intentional boundary: fact-stream consumers such as
+`lib_c_facts` can reuse the text-record mechanics without depending on the
+runtime event protocol. Event producers and analyzers use `p101_tool_event`,
+which remains the sole owner of the P101 event schema.
+
 `p101_tool_event/model.h` adds the shared policy-free causal model. Consumers
 ingest validated event records, finish the model once, and then inspect
 call-parent, call-return, call-caused-event, resource-lifetime, and
@@ -56,6 +64,14 @@ rather than interpreted under weaker assumptions.
 lightweight run receipts. It records bytes, physical lines, final-newline state,
 and an FNV-1a 64-bit fingerprint. That fingerprint is a reproducible change
 detector, not a cryptographic authenticity proof.
+
+`p101_tool_run_receipt_write_json()` supplies the shared machine-readable
+`p101-tool-run-receipt-v1` envelope. Tools retain ordinary Unix exit statuses,
+while receipts distinguish `clean`, `findings`, `refused`, `incomplete`,
+`unsupported`, and `tool-error`. A receipt binds the tool and input identities,
+executed-check counts, an optional input fingerprint, and a required
+`does_not_prove` limitation. It records a bounded observation; it is not an
+authenticity or completeness proof.
 
 The protocol sees only records emitted by p101 wrappers or user code using the
 observation API. Direct libc calls and third-party internals are outside its

@@ -21,8 +21,16 @@ set(DARWIN_STANDARD_FLAGS
 set(LINUX_STANDARD_FLAGS)
 set(BSD_STANDARD_FLAGS)
 
-set(LIBRARY_TARGETS p101_tool_event)
+set(LIBRARY_TARGETS p101_record p101_tool_event)
 set(EXECUTABLE_TARGETS p101_event_model)
+
+set(p101_record_SOURCES
+        src/record.c
+)
+
+set(p101_record_HEADERS
+        include/p101_record/record.h
+)
 
 set(p101_tool_event_SOURCES
         src/event.c
@@ -45,6 +53,7 @@ set(p101_tool_event_HEADERS
 
 set(p101_tool_event_LINK_LIBRARIES
         p101_error
+        p101_record
 )
 
 set(p101_event_model_SOURCES

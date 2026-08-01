@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <p101_error/error.h>
+#include <p101_record/record.h>
 #include <p101_tool_event/event.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -115,26 +116,26 @@ static void test_small_helpers(void)
         EXPECT(p101_tool_event_line_is_ours(prefixes[index]));
     }
 
-    EXPECT(p101_tool_event_split(NULL) == NULL);
+    EXPECT(p101_record_split(NULL) == NULL);
     cursor = NULL;
-    EXPECT(p101_tool_event_split(&cursor) == NULL);
+    EXPECT(p101_record_split(&cursor) == NULL);
     cursor = split_text;
-    EXPECT(strcmp(p101_tool_event_split(&cursor), "one") == 0);
-    EXPECT(strcmp(p101_tool_event_split(&cursor), "two") == 0);
+    EXPECT(strcmp(p101_record_split(&cursor), "one") == 0);
+    EXPECT(strcmp(p101_record_split(&cursor), "two") == 0);
     EXPECT(cursor == NULL);
 
-    p101_tool_event_unescape_field(NULL);
-    p101_tool_event_unescape_field(escaped);
+    p101_record_unescape_field(NULL);
+    p101_record_unescape_field(escaped);
     EXPECT(strcmp(escaped, "a\tb\nc\rd\\eq\\") == 0);
 
-    EXPECT(!p101_tool_event_parse_size_field(NULL, &value));
-    EXPECT(!p101_tool_event_parse_size_field("", &value));
-    EXPECT(!p101_tool_event_parse_size_field("1", NULL));
-    EXPECT(!p101_tool_event_parse_size_field("-1", &value));
-    EXPECT(!p101_tool_event_parse_size_field("1x", &value));
-    EXPECT(!p101_tool_event_parse_size_field("999999999999999999999999999999999999", &value));
-    EXPECT(p101_tool_event_parse_size_field("0", &value) && value == 0U);
-    EXPECT(p101_tool_event_parse_size_field("42", &value) && value == 42U);
+    EXPECT(!p101_record_parse_size(NULL, &value));
+    EXPECT(!p101_record_parse_size("", &value));
+    EXPECT(!p101_record_parse_size("1", NULL));
+    EXPECT(!p101_record_parse_size("-1", &value));
+    EXPECT(!p101_record_parse_size("1x", &value));
+    EXPECT(!p101_record_parse_size("999999999999999999999999999999999999", &value));
+    EXPECT(p101_record_parse_size("0", &value) && value == 0U);
+    EXPECT(p101_record_parse_size("42", &value) && value == 42U);
 
     EXPECT(strcmp(p101_tool_event_parse_status_name(P101_TOOL_EVENT_PARSE_OTHER), "not a p101 event record") == 0);
     EXPECT(strcmp(p101_tool_event_parse_status_name(P101_TOOL_EVENT_PARSE_OK), "ok") == 0);
