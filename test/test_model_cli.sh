@@ -108,14 +108,14 @@ fi
 {
     head -n 1 "$calls"
     sed '$d' "$resources"
-    tail -n 1 "$resources" | awk -F '\t' 'BEGIN {OFS="\t"} {$8 = 3; print}'
+    tail -n 1 "$resources" | awk -F '\t' 'BEGIN {OFS="\t"} {$9 = 3; print}'
 } >"$work/call-in-resource-stream.log"
 "$tool" -r "$work/call-in-resource-stream.log" -c "$calls" >/dev/null
 {
     head -n 1 "$calls"
     sed '$d' "$resources"
     sed -n '2p' "$calls"
-    tail -n 1 "$calls" | awk -F '\t' 'BEGIN {OFS="\t"} {$8 = 4; print}'
+    tail -n 1 "$calls" | awk -F '\t' 'BEGIN {OFS="\t"} {$9 = 4; print}'
 } >"$work/resource-in-call-stream.log"
 "$tool" -r "$resources" -c "$work/resource-in-call-stream.log" >/dev/null
 if "$tool" -r "$resources" -c "$calls" >&- 2>/dev/null; then

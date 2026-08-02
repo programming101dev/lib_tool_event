@@ -58,7 +58,7 @@ static int close_receipt_file(int fd)
 
 static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
 {
-    if(receipt == NULL || receipt->tool_name == NULL || receipt->tool_version == NULL || receipt->input_schema == NULL || receipt->input_identity == NULL || receipt->does_not_prove == NULL)
+    if(receipt == NULL || receipt->tool_name == NULL || receipt->tool_version == NULL || receipt->input_schema == NULL || receipt->input_identity == NULL || receipt->failed_stage == NULL || receipt->first_diagnostic == NULL || receipt->does_not_prove == NULL)
     {
         return 0;
     }
@@ -66,7 +66,19 @@ static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
     {
         return 0;
     }
-    return p101_tool_outcome_name(receipt->outcome) != NULL;
+    if(p101_tool_outcome_name(receipt->outcome) == NULL || p101_tool_failure_reason_name(receipt->failure_reason) == NULL)
+    {
+        return 0;
+    }
+    if((int)receipt->failure_reason != (int)receipt->outcome)
+    {
+        return 0;
+    }
+    if(receipt->outcome == P101_TOOL_OUTCOME_CLEAN)
+    {
+        return receipt->failure_reason == P101_TOOL_FAILURE_NONE && receipt->failed_stage[0] == '\0' && receipt->first_diagnostic[0] == '\0';
+    }
+    return receipt->failure_reason != P101_TOOL_FAILURE_NONE && receipt->failed_stage[0] != '\0' && receipt->first_diagnostic[0] != '\0';
 }
 
 static int receipt_put_json_string(FILE *stream, const char *value)
@@ -315,6 +327,24 @@ const char *p101_tool_outcome_name(p101_tool_outcome outcome)
     return names[outcome];
 }
 
+const char *p101_tool_failure_reason_name(p101_tool_failure_reason reason)
+{
+    static const char *const names[] = {
+        "none",
+        "findings-present",
+        "input-refused",
+        "evidence-incomplete",
+        "unsupported-input",
+        "tool-error",
+    };
+
+    if(reason > P101_TOOL_FAILURE_TOOL_ERROR)
+    {
+        return NULL;
+    }
+    return names[reason];
+}
+
 int p101_tool_outcome_exit_status(p101_tool_outcome outcome)
 {
     if(outcome == P101_TOOL_OUTCOME_CLEAN)
@@ -330,6 +360,7 @@ int p101_tool_outcome_exit_status(p101_tool_outcome outcome)
 
 int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const struct p101_tool_run_receipt *receipt, const struct p101_tool_event_fingerprint *fingerprint)
 {
+    const char *failure_reason_name;
     const char *outcome_name;
 
     if(stream == NULL || !receipt_is_valid(receipt))
@@ -337,7 +368,8 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
         P101_ERROR_RAISE_CHECK(err);
         return -1;
     }
-    outcome_name = p101_tool_outcome_name(receipt->outcome);
+    outcome_name        = p101_tool_outcome_name(receipt->outcome);
+    failure_reason_name = p101_tool_failure_reason_name(receipt->failure_reason);
 #ifdef P101_TOOL_EVENT_TESTING
     if(forced_receipt_failure_stage == 1)
     {
@@ -348,9 +380,11 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
 #endif
     // GCOVR_EXCL_BR_START: test builds inject each writer phase immediately
     // above/below these calls; individual libc write sites are not portable.
-    if(fputs("{\"schema\":\"p101-tool-run-receipt-v1\",\"tool\":{\"name\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_name) != 0 || fputs(",\"version\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_version) != 0 ||
+    if(fputs("{\"schema\":\"p101-tool-run-receipt-v2\",\"tool\":{\"name\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_name) != 0 || fputs(",\"version\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_version) != 0 ||
        fputs("},\"input\":{\"schema\":", stream) == EOF || receipt_put_json_string(stream, receipt->input_schema) != 0 || fputs(",\"identity\":", stream) == EOF || receipt_put_json_string(stream, receipt->input_identity) != 0 ||
-       fputs("},\"outcome\":", stream) == EOF || receipt_put_json_string(stream, outcome_name) != 0 || fprintf(stream, ",\"checks\":{\"attempted\":%zu,\"completed\":%zu}", receipt->checks_attempted, receipt->checks_completed) < 0)
+       fputs("},\"outcome\":", stream) == EOF || receipt_put_json_string(stream, outcome_name) != 0 || fputs(",\"failure\":{\"reason\":", stream) == EOF || receipt_put_json_string(stream, failure_reason_name) != 0 || fputs(",\"stage\":", stream) == EOF ||
+       receipt_put_json_string(stream, receipt->failed_stage) != 0 || fputs(",\"first_diagnostic\":", stream) == EOF || receipt_put_json_string(stream, receipt->first_diagnostic) != 0 ||
+       fprintf(stream, "},\"checks\":{\"attempted\":%zu,\"completed\":%zu}", receipt->checks_attempted, receipt->checks_completed) < 0)
     {
         return receipt_write_failed(err);    // GCOVR_EXCL_LINE -- staged failure covers this output phase.
     }

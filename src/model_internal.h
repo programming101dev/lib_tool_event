@@ -6,6 +6,7 @@
 struct p101_tool_model_owned_node
 {
     struct p101_tool_model_node value;
+    char                       *run_id;
     char                       *function_name;
     char                       *file_name;
     char                       *call_name;
@@ -22,6 +23,7 @@ struct p101_tool_model_owned_node
 
 struct p101_tool_model
 {
+    char                              *run_id;
     struct p101_tool_model_owned_node *nodes;
     size_t                             node_count;
     size_t                             node_capacity;

@@ -25,6 +25,10 @@ static void test_invalid_and_allocation_failure(void)
     EXPECT(errno == EINVAL);
     EXPECT(p101_tool_event_stream_health_observe(&health, NULL) == -1);
     EXPECT(errno == EINVAL);
+    EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
+    EXPECT(health.invalid_run_ids == 1U);
+    EXPECT(!p101_tool_event_stream_health_is_complete(&health));
+    record.run_id = "allocation";
     p101_tool_event_test_force_health_allocation_failure();
     EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
     EXPECT(health.allocation_failed == 1);
@@ -44,6 +48,7 @@ static void test_growth_and_lookup(void)
     struct p101_tool_event_record        record = {0};
 
     record.record_kind = P101_TOOL_EVENT_RECORD_FD;
+    record.run_id      = "growth";
     for(long pid = 1; pid <= 10; pid++)
     {
         record.pid        = pid;
@@ -59,6 +64,12 @@ static void test_growth_and_lookup(void)
     record.context_id = 99U;
     EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
     EXPECT(health.producer_count == 11U);
+    record.run_id = "different-run";
+    EXPECT(p101_tool_event_stream_health_observe(&health, &record) == 0);
+    EXPECT(health.producer_count == 12U);
+    EXPECT(health.distinct_run_ids == 2U);
+    EXPECT(health.mixed_run_ids == 1);
+    EXPECT(!p101_tool_event_stream_health_is_complete(&health));
     p101_tool_event_stream_health_destroy(&health);
 }
 
@@ -70,6 +81,7 @@ static void test_completeness_conditions(void)
     producer.completion_records = 1U;
     health.records_observed     = 1U;
     health.producer_count       = 1U;
+    health.distinct_run_ids     = 1U;
     health.producers            = &producer;
     EXPECT(p101_tool_event_stream_health_is_complete(&health));
 
@@ -95,7 +107,16 @@ static void test_completeness_conditions(void)
     health.records_after_completion   = 1U;
     EXPECT(!p101_tool_event_stream_health_is_complete(&health));
     health.records_after_completion = 0U;
-    health.allocation_failed        = 1;
+    health.invalid_run_ids          = 1U;
+    EXPECT(!p101_tool_event_stream_health_is_complete(&health));
+    health.invalid_run_ids = 0U;
+    health.mixed_run_ids   = 1;
+    EXPECT(!p101_tool_event_stream_health_is_complete(&health));
+    health.mixed_run_ids    = 0;
+    health.distinct_run_ids = 2U;
+    EXPECT(!p101_tool_event_stream_health_is_complete(&health));
+    health.distinct_run_ids  = 1U;
+    health.allocation_failed = 1;
     EXPECT(!p101_tool_event_stream_health_is_complete(&health));
     health.allocation_failed = 0;
 

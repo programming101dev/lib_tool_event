@@ -28,6 +28,16 @@ extern "C"
         P101_TOOL_OUTCOME_TOOL_ERROR
     } p101_tool_outcome;
 
+    typedef enum
+    {
+        P101_TOOL_FAILURE_NONE = 0,
+        P101_TOOL_FAILURE_FINDINGS_PRESENT,
+        P101_TOOL_FAILURE_INPUT_REFUSED,
+        P101_TOOL_FAILURE_EVIDENCE_INCOMPLETE,
+        P101_TOOL_FAILURE_UNSUPPORTED_INPUT,
+        P101_TOOL_FAILURE_TOOL_ERROR
+    } p101_tool_failure_reason;
+
     struct p101_tool_event_fingerprint
     {
         size_t   bytes;
@@ -38,14 +48,17 @@ extern "C"
 
     struct p101_tool_run_receipt
     {
-        const char       *tool_name;
-        const char       *tool_version;
-        const char       *input_schema;
-        const char       *input_identity;
-        p101_tool_outcome outcome;
-        size_t            checks_attempted;
-        size_t            checks_completed;
-        const char       *does_not_prove;
+        const char              *tool_name;
+        const char              *tool_version;
+        const char              *input_schema;
+        const char              *input_identity;
+        p101_tool_outcome        outcome;
+        p101_tool_failure_reason failure_reason;
+        const char              *failed_stage;
+        const char              *first_diagnostic;
+        size_t                   checks_attempted;
+        size_t                   checks_completed;
+        const char              *does_not_prove;
     };
 
     /*
@@ -57,6 +70,7 @@ extern "C"
      */
     int         p101_tool_event_fingerprint_file(struct p101_error *err, const char *path, size_t maximum_bytes, size_t maximum_records, struct p101_tool_event_fingerprint *fingerprint);
     const char *p101_tool_outcome_name(p101_tool_outcome outcome);
+    const char *p101_tool_failure_reason_name(p101_tool_failure_reason reason);
     int         p101_tool_outcome_exit_status(p101_tool_outcome outcome);
     int         p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const struct p101_tool_run_receipt *receipt, const struct p101_tool_event_fingerprint *fingerprint);
 

@@ -29,6 +29,7 @@ static struct p101_tool_event_record base_record(p101_tool_event_record_kind kin
     memset(&record, 0, sizeof(record));
     record.version                = P101_TOOL_EVENT_LOG_VERSION;
     record.record_kind            = kind;
+    record.run_id                 = "model-test";
     record.pid                    = 41;
     record.context_id             = 7U;
     record.sequence               = sequence;
@@ -122,9 +123,11 @@ static void test_model_graph_and_json(void)
 
 static void test_invalid_operations(void)
 {
-    struct p101_error      *err;
-    struct p101_tool_model *model;
-    FILE                   *stream;
+    struct p101_error            *err;
+    struct p101_tool_model       *model;
+    struct p101_tool_event_record record;
+    char                          overlong_run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 2U];
+    FILE                         *stream;
 
     err    = p101_error_create(false);
     model  = p101_tool_model_create(err);
@@ -147,6 +150,30 @@ static void test_invalid_operations(void)
     EXPECT(p101_error_is_errno(err, EINVAL));
     p101_error_reset(err);
     EXPECT(p101_tool_model_ingest(err, NULL, NULL) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    record        = base_record(P101_TOOL_EVENT_RECORD_FD, 1U);
+    record.run_id = NULL;
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
+    overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
+    record                                        = base_record(P101_TOOL_EVENT_RECORD_FD, 1U);
+    record.run_id                                 = overlong_run_id;
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    record         = base_record(P101_TOOL_EVENT_RECORD_FD, 1U);
+    record.version = P101_TOOL_EVENT_LOG_VERSION - 1;
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_is_errno(err, EINVAL));
+    p101_error_reset(err);
+    record = base_record(P101_TOOL_EVENT_RECORD_FD, 1U);
+    EXPECT(p101_tool_model_ingest(err, model, &record) == 0);
+    record.run_id   = "different-run";
+    record.sequence = 2U;
+    EXPECT(p101_tool_model_ingest(err, model, &record) == -1);
     EXPECT(p101_error_is_errno(err, EINVAL));
     fclose(stream);
     p101_tool_model_destroy(&model);

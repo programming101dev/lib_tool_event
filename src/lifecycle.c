@@ -25,6 +25,7 @@ static char allocation_resource_class[] = "allocation";    // NOLINT(cppcoreguid
 
 struct p101_tool_event_lifecycle_model
 {
+    char                                      run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 1U];
     struct p101_tool_event_lifecycle_entry   *entries;
     size_t                                    entry_count;
     size_t                                    entry_capacity;
@@ -166,7 +167,12 @@ int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_ev
 {
     int result;
 
-    if(model == NULL || record == NULL)
+    if(model == NULL || record == NULL || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    {
+        P101_ERROR_RAISE_CHECK(err);
+        return -1;
+    }
+    if(model->run_id[0] != '\0' && strcmp(model->run_id, record->run_id) != 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         return -1;
@@ -212,6 +218,10 @@ int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_ev
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
+    if(result == 0 && model->run_id[0] == '\0')
+    {
+        (void)memcpy(model->run_id, record->run_id, strlen(record->run_id) + 1U);
+    }
     return result;
 }
 

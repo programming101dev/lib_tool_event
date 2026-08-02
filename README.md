@@ -27,7 +27,7 @@ for that mechanism:
 p101-event-model -r resources.log -c calls.log -o run-model.json
 ```
 
-It validates both complete protocol-v4 streams and serializes exactly one
+It validates both complete protocol-v5 streams and serializes exactly one
 model. It does not emit findings. `p101 analyze` launches this builder once and
 applies resource, synchronization, and trace policies to the resulting model
 without reparsing TSV.
@@ -51,14 +51,16 @@ It does not decide whether a finding should fail a course gate or how a report
 should explain it. Those policies remain in the runtime policy modules and
 their report views.
 
-Event format v4 uses this common prefix:
+Event format v5 uses this common prefix:
 
 ```text
-MAGIC<TAB>4<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-ns<TAB>...
+MAGIC<TAB>5<TAB>run-id<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-ns<TAB>...
 ```
 
-Version 4 is the only supported protocol version. Other versions are rejected
-rather than interpreted under weaker assumptions.
+Version 5 is the only supported protocol version. Every record is bound to one
+capture run. Stream-health validation rejects mixed run identities, so reused
+process IDs and context counters cannot silently combine separate executions.
+Other versions are rejected rather than interpreted under weaker assumptions.
 
 `p101_tool_event_fingerprint_file()` supplies the bounded file fingerprint used by
 lightweight run receipts. It records bytes, physical lines, final-newline state,
@@ -66,10 +68,11 @@ and an FNV-1a 64-bit fingerprint. That fingerprint is a reproducible change
 detector, not a cryptographic authenticity proof.
 
 `p101_tool_run_receipt_write_json()` supplies the shared machine-readable
-`p101-tool-run-receipt-v1` envelope. Tools retain ordinary Unix exit statuses,
+`p101-tool-run-receipt-v2` envelope. Tools retain ordinary Unix exit statuses,
 while receipts distinguish `clean`, `findings`, `refused`, `incomplete`,
-`unsupported`, and `tool-error`. A receipt binds the tool and input identities,
-executed-check counts, an optional input fingerprint, and a required
+`unsupported`, and `tool-error`. Non-clean receipts also carry a typed failure
+reason, the stage that failed, and the first actionable diagnostic. A receipt
+binds the tool and input identities, executed-check counts, an optional input fingerprint, and a required
 `does_not_prove` limitation. It records a bounded observation; it is not an
 authenticity or completeness proof.
 

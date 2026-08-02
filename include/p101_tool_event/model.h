@@ -45,6 +45,7 @@ extern "C"
         bool                          cloexec;
         size_t                        size;
         int                           line_number;
+        const char                   *run_id;
         const char                   *function_name;
         const char                   *file_name;
         const char                   *call_name;

@@ -15,11 +15,13 @@ enum
     NUMBER_BASE              = 10,
     MAX_FIELDS               = 20,
     EVENT_FD_MAX             = 1048576,
-    METADATA_FIELDS          = 6,
-    CONTEXT_INDEX            = 2,
-    SEQUENCE_INDEX           = 3,
-    MONOTONIC_INDEX          = 4,
-    WALL_INDEX               = 5,
+    METADATA_FIELDS          = 7,
+    RUN_ID_INDEX             = 1,
+    PID_INDEX                = 2,
+    CONTEXT_INDEX            = 3,
+    SEQUENCE_INDEX           = 4,
+    MONOTONIC_INDEX          = 5,
+    WALL_INDEX               = 6,
     FD_PAYLOAD_FIELDS        = 5,
     ALLOC_PAYLOAD_FIELDS     = 7,
     FORK_PAYLOAD_FIELDS      = 4,
@@ -65,7 +67,7 @@ static int                                     output_is_valid(const struct p101
 static const char                             *record_magic(p101_tool_event_record_kind kind);
 static const char                             *alloc_kind_name(p101_tool_event_alloc_kind kind);
 static const char                             *resource_kind_name(p101_tool_event_resource_kind kind);
-static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, long pid, size_t context_id);
+static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, const char *run_id, long pid, size_t context_id);
 
 #ifdef P101_TOOL_EVENT_TESTING
 static int force_health_allocation_failure;
@@ -318,7 +320,24 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
         return -1;
     }
 
-    producer = find_or_add_producer(health, record->pid, record->context_id);
+    if(record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    {
+        health->invalid_run_ids++;
+        errno = EINVAL;
+        return -1;
+    }
+    if(health->distinct_run_ids == 0U)
+    {
+        (void)snprintf(health->run_id, sizeof(health->run_id), "%s", record->run_id);
+        health->distinct_run_ids = 1U;
+    }
+    else if(strcmp(health->run_id, record->run_id) != 0)
+    {
+        health->mixed_run_ids    = 1;
+        health->distinct_run_ids = 2U;
+    }
+
+    producer = find_or_add_producer(health, record->run_id, record->pid, record->context_id);
     if(producer == NULL)
     {
         health->allocation_failed = 1;
@@ -371,7 +390,7 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
 int p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health)
 {
     return health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U && health->attempted_count_mismatches == 0U &&
-           health->records_after_completion == 0U && health->allocation_failed == 0 && p101_tool_event_stream_health_incomplete_producers(health) == 0U;
+           health->records_after_completion == 0U && health->distinct_run_ids == 1U && health->invalid_run_ids == 0U && health->mixed_run_ids == 0 && health->allocation_failed == 0 && p101_tool_event_stream_health_incomplete_producers(health) == 0U;
 }
 
 size_t p101_tool_event_stream_health_incomplete_producers(const struct p101_tool_event_stream_health *health)
@@ -408,11 +427,11 @@ void p101_tool_event_stream_health_destroy(struct p101_tool_event_stream_health 
     memset(health, 0, sizeof(*health));
 }
 
-static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, long pid, size_t context_id)
+static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, const char *run_id, long pid, size_t context_id)
 {
     for(size_t index = 0U; index < health->producer_count; index++)
     {
-        if(health->producers[index].pid == pid && health->producers[index].context_id == context_id)
+        if(strcmp(health->producers[index].run_id, run_id) == 0 && health->producers[index].pid == pid && health->producers[index].context_id == context_id)
         {
             return &health->producers[index];
         }
@@ -446,6 +465,7 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
     }
 
     memset(&health->producers[health->producer_count], 0, sizeof(*health->producers));
+    (void)snprintf(health->producers[health->producer_count].run_id, sizeof(health->producers[health->producer_count].run_id), "%s", run_id);
     health->producers[health->producer_count].pid        = pid;
     health->producers[health->producer_count].context_id = context_id;
     health->producer_count++;
@@ -533,7 +553,12 @@ static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_
         return P101_TOOL_EVENT_PARSE_BAD_VERSION;
     }
     record->version = (int)version;
-    if(!parse_long_field(fields[1], 0, LONG_MAX, &record->pid))
+    record->run_id  = fields[RUN_ID_INDEX];
+    if(record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    {
+        return P101_TOOL_EVENT_PARSE_MALFORMED;
+    }
+    if(!parse_long_field(fields[PID_INDEX], 0, LONG_MAX, &record->pid))
     {
         return P101_TOOL_EVENT_PARSE_MALFORMED;
     }
@@ -608,7 +633,9 @@ static void write_metadata(struct line_builder *builder, const struct p101_tool_
     int version;
 
     version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
-    append_format(builder, "%d\t%ld\t%zu\t%zu\t", version, record->pid, record->context_id, record->sequence);
+    append_format(builder, "%d\t", version);
+    append_field(builder, record->run_id);
+    append_format(builder, "\t%ld\t%zu\t%zu\t", record->pid, record->context_id, record->sequence);
     if(record->monotonic_ns_available != 0)
     {
         append_format(builder, "%zu\t", record->monotonic_ns);
@@ -771,7 +798,8 @@ static int output_is_valid(const struct p101_tool_event_output *record)
     int version;
 
     version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
-    if(version != P101_TOOL_EVENT_LOG_VERSION || record->pid < 0 || (record->monotonic_ns_available != 0 && record->monotonic_ns_available != 1) || (record->wall_unix_ns_available != 0 && record->wall_unix_ns_available != 1))
+    if(version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES || record->pid < 0 ||
+       (record->monotonic_ns_available != 0 && record->monotonic_ns_available != 1) || (record->wall_unix_ns_available != 0 && record->wall_unix_ns_available != 1))
     {
         return 0;
     }
@@ -1074,6 +1102,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
 
 static void unescape_record(struct p101_tool_event_record *record)
 {
+    p101_record_unescape_field(record->run_id);
     p101_record_unescape_field(record->ptr);
     p101_record_unescape_field(record->new_ptr);
     p101_record_unescape_field(record->target);

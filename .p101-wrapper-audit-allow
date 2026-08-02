@@ -18,6 +18,11 @@ src/event.c:*:strlen
 src/event.c:*:strncmp
 src/event.c:*:strtol
 src/event.c:p101_tool_event_write:write
+# These copies occur after the run ID length has been validated. This protocol
+# library cannot call p101_snprintf because that wrapper depends on lib_env,
+# which in turn emits records through lib_tool_event.
+src/event.c:p101_tool_event_stream_health_observe:snprintf
+src/event.c:find_or_add_producer:snprintf
 src/lifecycle.c:*:free
 src/lifecycle.c:*:malloc
 src/lifecycle.c:*:memcpy

@@ -119,6 +119,7 @@ void p101_tool_model_destroy(struct p101_tool_model **model)
     }
     free((*model)->nodes);
     free((*model)->edges);
+    free((*model)->run_id);
     free(*model);
     *model = NULL;
 }
@@ -127,7 +128,20 @@ int p101_tool_model_ingest(struct p101_error *err, struct p101_tool_model *model
 {
     struct p101_tool_model_owned_node *node;
 
-    if(model == NULL || record == NULL || model->finished != 0)
+    if(model == NULL || record == NULL || model->finished != 0 || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    {
+        P101_ERROR_RAISE_ERRNO(err, EINVAL);
+        return -1;
+    }
+    if(model->run_id == NULL)
+    {
+        model->run_id = copy_text(err, record->run_id);
+        if(model->run_id == NULL)
+        {
+            return -1;
+        }
+    }
+    else if(strcmp(model->run_id, record->run_id) != 0)
     {
         P101_ERROR_RAISE_ERRNO(err, EINVAL);
         return -1;
@@ -351,6 +365,7 @@ static int copy_record_text(struct p101_error *err, struct p101_tool_model_owned
         node->value.field = node->field;                                                                                                                                                                                                                           \
     } while(0)
 
+    COPY_FIELD(run_id);
     COPY_FIELD(function_name);
     COPY_FIELD(file_name);
     COPY_FIELD(call_name);
@@ -369,6 +384,7 @@ static int copy_record_text(struct p101_error *err, struct p101_tool_model_owned
 
 static void free_node(struct p101_tool_model_owned_node *node)
 {
+    free(node->run_id);
     free(node->function_name);
     free(node->file_name);
     free(node->call_name);
@@ -386,7 +402,7 @@ static void free_node(struct p101_tool_model_owned_node *node)
 
 static int same_context(const struct p101_tool_model_node *left, const struct p101_tool_model_node *right)
 {
-    return left->pid == right->pid && left->context_id == right->context_id;
+    return strcmp(left->run_id, right->run_id) == 0 && left->pid == right->pid && left->context_id == right->context_id;
 }
 
 static size_t find_active_enter(const struct p101_tool_model *model, const size_t *matched_exit, size_t node_index, int require_name)

@@ -50,6 +50,14 @@ static void test_tool_outcomes(void)
     EXPECT(p101_tool_outcome_name((p101_tool_outcome)99) == NULL);
     EXPECT(p101_tool_outcome_name((p101_tool_outcome)-1) == NULL);
     EXPECT(p101_tool_outcome_exit_status((p101_tool_outcome)99) == 2);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_NONE), "none") == 0);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_FINDINGS_PRESENT), "findings-present") == 0);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_INPUT_REFUSED), "input-refused") == 0);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_EVIDENCE_INCOMPLETE), "evidence-incomplete") == 0);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_UNSUPPORTED_INPUT), "unsupported-input") == 0);
+    EXPECT(strcmp(p101_tool_failure_reason_name(P101_TOOL_FAILURE_TOOL_ERROR), "tool-error") == 0);
+    EXPECT(p101_tool_failure_reason_name((p101_tool_failure_reason)99) == NULL);
+    EXPECT(p101_tool_failure_reason_name((p101_tool_failure_reason)-1) == NULL);
 }
 
 static void test_run_receipt_json(void)
@@ -74,6 +82,9 @@ static void test_run_receipt_json(void)
     receipt.input_schema      = "test-v1";
     receipt.input_identity    = "file\"\\\b\f\n\r\t\x01name";
     receipt.outcome           = P101_TOOL_OUTCOME_FINDINGS;
+    receipt.failure_reason    = P101_TOOL_FAILURE_FINDINGS_PRESENT;
+    receipt.failed_stage      = "analysis";
+    receipt.first_diagnostic  = "P101-FD-001 descriptor remains open";
     receipt.checks_attempted  = 3U;
     receipt.checks_completed  = 3U;
     receipt.does_not_prove    = "external truth";
@@ -82,8 +93,9 @@ static void test_run_receipt_json(void)
     rewind(stream);
     count         = fread(output, 1U, sizeof(output) - 1U, stream);
     output[count] = '\0';
-    EXPECT(strstr(output, "\"schema\":\"p101-tool-run-receipt-v1\"") != NULL);
+    EXPECT(strstr(output, "\"schema\":\"p101-tool-run-receipt-v2\"") != NULL);
     EXPECT(strstr(output, "\"outcome\":\"findings\"") != NULL);
+    EXPECT(strstr(output, "\"failure\":{\"reason\":\"findings-present\",\"stage\":\"analysis\",\"first_diagnostic\":\"P101-FD-001 descriptor remains open\"}") != NULL);
     EXPECT(strstr(output, "\"identity\":\"file\\\"\\\\\\b\\f\\n\\r\\t\\u0001name\"") != NULL);
     EXPECT(strstr(output, "\"value\":\"0000000000001234\"") != NULL);
     EXPECT(count > 0U && output[count - 1U] == '\n');
@@ -115,6 +127,9 @@ static void test_run_receipt_failures(void)
     receipt.input_schema     = "schema";
     receipt.input_identity   = "identity";
     receipt.outcome          = P101_TOOL_OUTCOME_CLEAN;
+    receipt.failure_reason   = P101_TOOL_FAILURE_NONE;
+    receipt.failed_stage     = "";
+    receipt.first_diagnostic = "";
     receipt.checks_attempted = 1U;
     receipt.checks_completed = 1U;
     receipt.does_not_prove   = "limits";
@@ -144,6 +159,22 @@ static void test_run_receipt_failures(void)
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);
     receipt.does_not_prove = "limits";
+    receipt.outcome        = P101_TOOL_OUTCOME_FINDINGS;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.outcome        = P101_TOOL_OUTCOME_CLEAN;
+    receipt.failure_reason = P101_TOOL_FAILURE_FINDINGS_PRESENT;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.failure_reason = P101_TOOL_FAILURE_NONE;
+    receipt.failed_stage   = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.failed_stage     = "";
+    receipt.first_diagnostic = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.first_diagnostic = "";
 
     for(int stage = 1; stage <= 3; stage++)
     {

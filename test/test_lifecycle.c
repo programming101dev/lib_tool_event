@@ -22,6 +22,8 @@ extern void p101_tool_event_test_lifecycle_force_format_failure(void);
 static void initialize_resource(struct p101_tool_event_record *record, p101_tool_event_resource_kind kind, const char *resource_class, const char *resource_id)
 {
     memset(record, 0, sizeof(*record));
+    record->version                = P101_TOOL_EVENT_LOG_VERSION;
+    record->run_id                 = "lifecycle-test";
     record->record_kind            = P101_TOOL_EVENT_RECORD_RESOURCE;
     record->resource_kind          = kind;
     record->pid                    = 1;
@@ -89,11 +91,27 @@ static void test_public_boundaries(void)
     p101_error_destroy(err);
 }
 
+static void test_rejects_mixed_run_identity(void)
+{
+    struct p101_error                      *err;
+    struct p101_tool_event_lifecycle_model *model;
+    struct p101_tool_event_record           record;
+
+    model = new_model(&err);
+    initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, "class", "id");
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    record.run_id = "different-run";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_has_error(err));
+    p101_tool_event_lifecycle_destroy(&model);
+    p101_error_destroy(err);
+}
+
 static void test_release_and_replace_findings(void)
 {
-    struct p101_error                               *err;
-    struct p101_tool_event_lifecycle_model          *model;
-    struct p101_tool_event_record                    record;
+    struct p101_error                              *err;
+    struct p101_tool_event_lifecycle_model         *model;
+    struct p101_tool_event_record                   record;
     const struct p101_tool_event_lifecycle_finding *leak;
 
     model = new_model(&err);
@@ -150,6 +168,8 @@ static void ingest_allocation(struct p101_error *err, struct p101_tool_event_lif
     struct p101_tool_event_record record;
 
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_ALLOC;
     record.alloc_kind    = kind;
     record.pid           = 2;
@@ -193,6 +213,8 @@ static void test_fork_and_exec_edges(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version     = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id      = "lifecycle-test";
     record.record_kind = P101_TOOL_EVENT_RECORD_FORK;
     record.pid         = -1;
     record.child_pid   = 2;
@@ -221,6 +243,8 @@ static void test_fork_and_exec_edges(void)
     p101_error_reset(err);
 
     memset(&record, 0, sizeof(record));
+    record.version     = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id      = "lifecycle-test";
     record.record_kind = P101_TOOL_EVENT_RECORD_EXEC;
     record.pid         = 1;
     record.fd          = 999;
@@ -244,6 +268,8 @@ static void test_duplicate_fork_after_child_release_is_idempotent(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -285,6 +311,8 @@ static void test_child_release_before_parent_fork_marker_is_reconciled(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -342,6 +370,8 @@ static void test_fork_reconciliation_preserves_other_findings(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -366,6 +396,8 @@ static void test_fork_reconciliation_preserves_other_findings(void)
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
 
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
     record.pid           = 2;
@@ -396,6 +428,8 @@ static void test_fork_reconciliation_propagates_release_failure(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -462,6 +496,8 @@ static void test_format_failures(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version     = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id      = "lifecycle-test";
     record.record_kind = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind     = P101_TOOL_EVENT_FD_OPEN;
     record.fd          = 3;
@@ -587,6 +623,8 @@ static void test_failure_propagation(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_ALLOC;
     record.alloc_kind    = P101_TOOL_EVENT_ALLOC_REALLOC;
     record.pid           = 1;
@@ -603,6 +641,8 @@ static void test_failure_propagation(void)
     ingest_allocation(err, model, P101_TOOL_EVENT_ALLOC_ALLOC, "old", NULL);
     p101_tool_event_test_lifecycle_fail_allocation_after(0U);
     memset(&record, 0, sizeof(record));
+    record.version     = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id      = "lifecycle-test";
     record.record_kind = P101_TOOL_EVENT_RECORD_ALLOC;
     record.alloc_kind  = P101_TOOL_EVENT_ALLOC_REALLOC;
     record.pid         = 2;
@@ -614,6 +654,8 @@ static void test_failure_propagation(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -634,6 +676,8 @@ static void test_failure_propagation(void)
 
     model = new_model(&err);
     memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
     record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
     record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
     record.pid           = 1;
@@ -663,6 +707,7 @@ static void test_failure_propagation(void)
 int main(void)
 {
     test_public_boundaries();
+    test_rejects_mixed_run_identity();
     test_release_and_replace_findings();
     test_allocation_shapes();
     test_fork_and_exec_edges();

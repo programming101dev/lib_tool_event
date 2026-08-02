@@ -1,19 +1,20 @@
-# p101 event format v4
+# p101 event format v5
 
 The p101 runtime event protocol is a line-oriented, tab-separated teaching
 format. It is deliberately readable with ordinary text tools while
 `lib_tool_event` supplies the authoritative bounded reader, serializer, parser, and
 policy-free lifecycle replay.
 
-Each v4 record starts with:
+Each v5 record starts with:
 
 ```text
-MAGIC<TAB>4<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-unix-ns<TAB>...
+MAGIC<TAB>5<TAB>run-id<TAB>pid<TAB>context<TAB>sequence<TAB>monotonic-ns<TAB>wall-unix-ns<TAB>...
 ```
 
-`context` distinguishes independent observation contexts in one process.
+`run-id` binds every record to one capture. Consumers reject a stream that
+mixes run identities. `context` distinguishes independent observation contexts in one process.
 Sequence numbers are monotonic within a context. A timestamp is `-` when the
-producer cannot provide it. Version 4 is the only supported protocol version;
+producer cannot provide it. Version 5 is the only supported protocol version;
 all other versions are rejected.
 
 Text fields escape backslash, tab, newline, and carriage return as `\\`, `\t`,
@@ -35,7 +36,7 @@ P101RESOURCE  ... ACQUIRE|RELEASE|REPLACE|TRANSFER class id related-id size meta
 P101COMPLETE  ... events-attempted write-failed write-errno
 ```
 
-The ellipsis is the common v4 prefix shown above. Optional text values are `-`.
+The ellipsis is the common v5 prefix shown above. Optional text values are `-`.
 Pointer and generic resource identities are opaque strings. POSIX spawn file
 actions are opaque, so consumers must not infer a fork-equivalent descriptor
 table from a spawn record. An exec wrapper emits descriptor snapshots before
@@ -51,7 +52,7 @@ Tools decide which resource classes and findings matter to their users.
 `P101COMPLETE` is the producer's end-of-stream receipt for one observation
 context. `events-attempted` excludes the completion record itself.
 `write-failed` is zero or one, and `write-errno` is zero unless a prior event
-write failed. A v4 stream without a completion record is incomplete evidence,
+write failed. A v5 stream without a completion record is incomplete evidence,
 not evidence of a clean run. Abrupt termination can legitimately prevent this
 record; consumers must report that limitation rather than silently accepting
 the prefix they happened to read.
@@ -82,7 +83,8 @@ POSIX async-signal-safe restrictions until `exec()` or `_Exit()`.
 - `p101_tool_event_fingerprint_file()` computes the bounded, non-cryptographic file
   fingerprint used by run receipts without changing the event records.
 - `p101_tool_event_lifecycle_*()` copies identities it retains and replays generic
-  acquire/release lifecycles without assigning severity or exit policy.
+  acquire/release lifecycles without assigning severity or exit policy. One
+  lifecycle model admits exactly one run identity.
 
 ## Separate control streams
 

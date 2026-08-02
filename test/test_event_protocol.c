@@ -147,23 +147,23 @@ static void test_small_helpers(void)
 static void test_valid_parser_records(void)
 {
     static const char *const records[] = {
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t4\t5\tCLOSE\t1048576\t2147483647\tf\tc\r\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tALLOC\t0x1\t-\t5\t1\tf\tc\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tFREE\t0x1\t-\t0\t1\tf\tc\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tREALLOC\t0x1\t0x2\t9\t1\tf\tc\n",
-        "P101FORK\t4\t1\t2\t3\t-\t-\t2\t1\tf\tc\n",
-        "P101SPAWN\t4\t1\t2\t3\t-\t-\t2\t1\tf\tc\ttarget\n",
-        "P101EXEC\t4\t1\t2\t3\t-\t-\t4\t0\t1\tf\tc\ttarget\n",
-        "P101EXECFAIL\t4\t1\t2\t3\t-\t-\t1\tf\tc\ttarget\n",
-        "P101CALL\t4\t1\t2\t3\t-\t-\tENTER\t1\tf\tcall\ta\\tb\t-\tc\n",
-        "P101CALL\t4\t1\t2\t3\t-\t-\tEXIT\t1\tf\tcall\t-\tresult\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tACQUIRE\tclass\tid\t-\t1\tmeta\t1\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tRELEASE\tclass\tid\t-\t0\t-\t1\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tREPLACE\tclass\tid\tnew\t2\t-\t1\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tTRANSFER\tclass\tid\tnew\t2\t-\t1\tf\tc\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t2\t0\t0\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t2\t1\t5\n",
+        "P101FD\t5\ttest\t1\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
+        "P101FD\t5\ttest\t1\t2\t3\t4\t5\tCLOSE\t1048576\t2147483647\tf\tc\r\n",
+        "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tALLOC\t0x1\t-\t5\t1\tf\tc\n",
+        "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tFREE\t0x1\t-\t0\t1\tf\tc\n",
+        "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tREALLOC\t0x1\t0x2\t9\t1\tf\tc\n",
+        "P101FORK\t5\ttest\t1\t2\t3\t-\t-\t2\t1\tf\tc\n",
+        "P101SPAWN\t5\ttest\t1\t2\t3\t-\t-\t2\t1\tf\tc\ttarget\n",
+        "P101EXEC\t5\ttest\t1\t2\t3\t-\t-\t4\t0\t1\tf\tc\ttarget\n",
+        "P101EXECFAIL\t5\ttest\t1\t2\t3\t-\t-\t1\tf\tc\ttarget\n",
+        "P101CALL\t5\ttest\t1\t2\t3\t-\t-\tENTER\t1\tf\tcall\ta\\tb\t-\tc\n",
+        "P101CALL\t5\ttest\t1\t2\t3\t-\t-\tEXIT\t1\tf\tcall\t-\tresult\tc\n",
+        "P101RESOURCE\t5\ttest\t1\t2\t3\t-\t-\tACQUIRE\tclass\tid\t-\t1\tmeta\t1\tf\tc\n",
+        "P101RESOURCE\t5\ttest\t1\t2\t3\t-\t-\tRELEASE\tclass\tid\t-\t0\t-\t1\tf\tc\n",
+        "P101RESOURCE\t5\ttest\t1\t2\t3\t-\t-\tREPLACE\tclass\tid\tnew\t2\t-\t1\tf\tc\n",
+        "P101RESOURCE\t5\ttest\t1\t2\t3\t-\t-\tTRANSFER\tclass\tid\tnew\t2\t-\t1\tf\tc\n",
+        "P101COMPLETE\t5\ttest\t1\t2\t3\t-\t-\t2\t0\t0\n",
+        "P101COMPLETE\t5\ttest\t1\t2\t3\t-\t-\t2\t1\t5\n",
     };
     struct p101_tool_event_record record;
 
@@ -245,6 +245,7 @@ static void set_common_output(struct p101_tool_event_output *output, p101_tool_e
 {
     memset(output, 0, sizeof(*output));
     output->record_kind            = kind;
+    output->run_id                 = "test-run";
     output->pid                    = 7;
     output->context_id             = 8U;
     output->sequence               = 9U;
@@ -352,6 +353,12 @@ static void test_invalid_writer_records(void)
     fclose(stream);
 
     output.version = 3;
+    expect_invalid_output(&output);
+    set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
+    output.run_id = NULL;
+    expect_invalid_output(&output);
+    set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
+    output.run_id = "";
     expect_invalid_output(&output);
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     output.pid = -1;

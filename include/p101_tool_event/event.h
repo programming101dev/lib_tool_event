@@ -12,11 +12,12 @@ extern "C"
 
     enum
     {
-        P101_TOOL_EVENT_LINE_MAX_BYTES = 4096,
-        P101_TOOL_EVENT_LOG_VERSION    = 4
+        P101_TOOL_EVENT_LINE_MAX_BYTES   = 4096,
+        P101_TOOL_EVENT_RUN_ID_MAX_BYTES = 96,
+        P101_TOOL_EVENT_LOG_VERSION      = 5
     };
 
-#define P101_TOOL_EVENT_SCHEMA_NAME "p101-tool-event-format-v4"
+#define P101_TOOL_EVENT_SCHEMA_NAME "p101-tool-event-format-v5"
 
     typedef enum
     {
@@ -78,6 +79,7 @@ extern "C"
     {
         int                           version;
         p101_tool_event_record_kind   record_kind;
+        char                         *run_id;
         long                          pid;
         long                          child_pid;
         size_t                        context_id;
@@ -115,6 +117,7 @@ extern "C"
     {
         int                           version;
         p101_tool_event_record_kind   record_kind;
+        const char                   *run_id;
         long                          pid;
         long                          child_pid;
         size_t                        context_id;
@@ -150,6 +153,7 @@ extern "C"
 
     struct p101_tool_event_producer_health
     {
+        char   run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 1U];
         long   pid;
         size_t context_id;
         size_t records_observed;
@@ -173,6 +177,10 @@ extern "C"
         size_t                                  nonmonotonic_sequences;
         size_t                                  attempted_count_mismatches;
         size_t                                  records_after_completion;
+        size_t                                  distinct_run_ids; /* 0, 1, or 2 meaning two-or-more */
+        size_t                                  invalid_run_ids;
+        int                                     mixed_run_ids;
+        char                                    run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 1U];
         int                                     last_write_errno;
         int                                     allocation_failed;
         struct p101_tool_event_producer_health *producers;
