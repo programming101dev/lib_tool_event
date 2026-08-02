@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The protocol tests exercise POSIX stream descriptors such as fileno().
+add_compile_definitions(_POSIX_C_SOURCE=200809L)
+
 option(P101_TEST_COVERAGE "Instrument the code under test" OFF)
 set(_COV "")
 if(P101_TEST_COVERAGE)
@@ -31,8 +34,7 @@ target_include_directories(p101_tool_event_under_test PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/include"
 )
 target_compile_definitions(p101_tool_event_under_test PRIVATE
-        P101_TOOL_EVENT_TESTING=1
-        _POSIX_C_SOURCE=200809L)
+        P101_TOOL_EVENT_TESTING=1)
 
 add_library(p101_error_under_test STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/src/error.c"
@@ -40,9 +42,6 @@ add_library(p101_error_under_test STATIC
 target_include_directories(p101_error_under_test PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/include"
 )
-target_compile_definitions(p101_error_under_test PRIVATE
-        _POSIX_C_SOURCE=200809L)
-
 add_executable(test_p101_tool_event test_event.c)
 target_link_libraries(test_p101_tool_event PRIVATE p101_tool_event_under_test p101_error_under_test Threads::Threads)
 target_compile_options(p101_tool_event_under_test PRIVATE ${_COV})
