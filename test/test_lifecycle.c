@@ -236,6 +236,189 @@ static void test_fork_and_exec_edges(void)
     p101_error_destroy(err);
 }
 
+static void test_duplicate_fork_after_child_release_is_idempotent(void)
+{
+    struct p101_error                      *err;
+    struct p101_tool_event_lifecycle_model *model;
+    struct p101_tool_event_record           record;
+
+    model = new_model(&err);
+    memset(&record, 0, sizeof(record));
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
+    record.pid           = 1;
+    record.fd            = 7;
+    record.function_name = "open";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.record_kind = P101_TOOL_EVENT_RECORD_FORK;
+    record.child_pid   = 2;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid           = 2;
+    record.function_name = "close";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.pid = 1;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.record_kind = P101_TOOL_EVENT_RECORD_FORK;
+    record.child_pid   = 2;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finish(err, model) == 0);
+    EXPECT(p101_tool_event_lifecycle_entry_count(model) == 2U);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 0U);
+
+    p101_tool_event_lifecycle_destroy(&model);
+    p101_error_destroy(err);
+}
+
+static void test_child_release_before_parent_fork_marker_is_reconciled(void)
+{
+    struct p101_error                            *err;
+    struct p101_tool_event_lifecycle_model       *model;
+    const struct p101_tool_event_lifecycle_entry *entry;
+    struct p101_tool_event_record                 record;
+
+    model = new_model(&err);
+    memset(&record, 0, sizeof(record));
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
+    record.pid           = 1;
+    record.context_id    = 1U;
+    record.sequence      = 10U;
+    record.fd            = 7;
+    record.function_name = "open";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.fd_kind                = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid                    = 2;
+    record.context_id             = 2U;
+    record.sequence               = 20U;
+    record.monotonic_ns           = 200U;
+    record.monotonic_ns_available = 1;
+    record.function_name          = "child_close";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 1U);
+
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FORK;
+    record.pid           = 1;
+    record.context_id    = 1U;
+    record.sequence      = 11U;
+    record.child_pid     = 2;
+    record.function_name = "fork";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 0U);
+    EXPECT(p101_tool_event_lifecycle_entry_count(model) == 2U);
+    entry = p101_tool_event_lifecycle_entry_at(model, 1U);
+    EXPECT(entry != NULL);
+    EXPECT(entry != NULL && !entry->live);
+    EXPECT(entry != NULL && entry->released_sequence == 20U);
+    EXPECT(entry != NULL && entry->released_monotonic_ns == 200U);
+    EXPECT(entry != NULL && entry->released_monotonic_ns_available);
+
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid           = 1;
+    record.sequence      = 12U;
+    record.function_name = "parent_close";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finish(err, model) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 0U);
+
+    p101_tool_event_lifecycle_destroy(&model);
+    p101_error_destroy(err);
+}
+
+static void test_fork_reconciliation_preserves_other_findings(void)
+{
+    struct p101_error                      *err;
+    struct p101_tool_event_lifecycle_model *model;
+    struct p101_tool_event_record           record;
+
+    model = new_model(&err);
+    memset(&record, 0, sizeof(record));
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
+    record.pid           = 1;
+    record.fd            = 7;
+    record.function_name = "open";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.pid     = 3;
+    record.fd      = 9;
+    record.fd_kind = P101_TOOL_EVENT_FD_OPEN;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    record.fd_kind = P101_TOOL_EVENT_FD_CLOSE;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.fd = 7;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_RELEASE, "other", "7");
+    record.pid = 2;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    memset(&record, 0, sizeof(record));
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid           = 2;
+    record.fd            = 7;
+    record.function_name = "child_close";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    record.fd = 8;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.record_kind = P101_TOOL_EVENT_RECORD_FORK;
+    record.pid         = 1;
+    record.fd          = 0;
+    record.child_pid   = 2;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 4U);
+    EXPECT(strcmp(p101_tool_event_lifecycle_finding_at(model, 3U)->resource_id, "8") == 0);
+
+    p101_tool_event_lifecycle_destroy(&model);
+    p101_error_destroy(err);
+}
+
+static void test_fork_reconciliation_propagates_release_failure(void)
+{
+    struct p101_error                      *err;
+    struct p101_tool_event_lifecycle_model *model;
+    struct p101_tool_event_record           record;
+
+    model = new_model(&err);
+    memset(&record, 0, sizeof(record));
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_OPEN;
+    record.pid           = 1;
+    record.fd            = 7;
+    record.function_name = "open";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid           = 2;
+    record.function_name = "child_close";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    record.record_kind = P101_TOOL_EVENT_RECORD_FORK;
+    record.pid         = 1;
+    record.child_pid   = 2;
+    p101_tool_event_test_lifecycle_fail_allocation_after(4U);
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    EXPECT(p101_error_has_error(err));
+
+    p101_tool_event_lifecycle_destroy(&model);
+    p101_error_destroy(err);
+}
+
 static void test_capacity_growth(void)
 {
     struct p101_error                      *err;
@@ -465,13 +648,16 @@ static void test_failure_propagation(void)
     p101_tool_event_lifecycle_destroy(&model);
     p101_error_destroy(err);
 
-    model = new_model(&err);
-    initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, "class", "leak");
-    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
-    p101_tool_event_test_lifecycle_fail_allocation_after(0U);
-    EXPECT(p101_tool_event_lifecycle_finish(err, model) == -1);
-    p101_tool_event_lifecycle_destroy(&model);
-    p101_error_destroy(err);
+    for(size_t failure = 0U; failure < 5U; failure++)
+    {
+        model = new_model(&err);
+        initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, "class", "leak");
+        EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+        p101_tool_event_test_lifecycle_fail_allocation_after(failure);
+        EXPECT(p101_tool_event_lifecycle_finish(err, model) == -1);
+        p101_tool_event_lifecycle_destroy(&model);
+        p101_error_destroy(err);
+    }
 }
 
 int main(void)
@@ -480,6 +666,10 @@ int main(void)
     test_release_and_replace_findings();
     test_allocation_shapes();
     test_fork_and_exec_edges();
+    test_duplicate_fork_after_child_release_is_idempotent();
+    test_child_release_before_parent_fork_marker_is_reconciled();
+    test_fork_reconciliation_preserves_other_findings();
+    test_fork_reconciliation_propagates_release_failure();
     test_capacity_growth();
     test_format_failures();
     test_create_allocation_failure();

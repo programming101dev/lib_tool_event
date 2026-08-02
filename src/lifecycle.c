@@ -40,6 +40,9 @@ static int                                     add_entry(struct p101_error *err,
 static int                                     ensure_finding_capacity(struct p101_error *err, struct p101_tool_event_lifecycle_model *model);
 static int                                     add_leak_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_lifecycle_entry *entry);
 static int   add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, p101_tool_event_lifecycle_finding_kind kind, const struct p101_tool_event_record *record, const struct p101_tool_event_lifecycle_entry *previous);
+static void  destroy_finding(struct p101_tool_event_lifecycle_finding *finding);
+static bool  take_stray_release(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, struct p101_tool_event_lifecycle_finding *finding);
+static int   reconcile_stray_releases(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id);
 static int   release_entry(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
 static int   ingest_resource(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
 static int   ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
@@ -151,12 +154,7 @@ void p101_tool_event_lifecycle_destroy(struct p101_tool_event_lifecycle_model **
     }
     for(size_t i = 0U; i < (*model)->finding_count; i++)
     {
-        free((*model)->findings[i].resource_class);
-        free((*model)->findings[i].resource_id);
-        free((*model)->findings[i].function_name);
-        free((*model)->findings[i].previous_function_name);
-        free((*model)->findings[i].file_name);
-        free((*model)->findings[i].previous_file_name);
+        destroy_finding(&(*model)->findings[i]);
     }
     free((*model)->entries);
     free((*model)->findings);
@@ -384,9 +382,11 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
      * only the entries that existed before this record: add_entry() may grow
      * the array and must not make this loop chase entries it just added.
      *
-     * Both fork branches emit the relationship so the child marker precedes
-     * any child wrapper event. The live-child lookup makes replay idempotent
-     * when the parent marker is also present.
+     * The parent emits the relationship after fork returns. A fast child can
+     * therefore release an inherited descriptor before this record reaches a
+     * shared stream. Reconcile any provisional stray release after cloning;
+     * emitting a second fork marker from the child would violate per-context
+     * sequence uniqueness.
      */
     inherited_count = model->entry_count;
     for(size_t index = 0U; index < inherited_count; index++)
@@ -401,7 +401,7 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         {
             continue;
         }
-        if(find_latest(model, record->child_pid, entry->resource_class, entry->resource_id, true) != NULL)
+        if(find_latest(model, record->child_pid, entry->resource_class, entry->resource_id, false) != NULL)
         {
             continue;
         }
@@ -427,6 +427,10 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         inherited.resource_id    = identifier;
         inherited.size           = entry->size;
         if(add_entry(err, model, &inherited, identifier) != 0)
+        {
+            return -1;
+        }
+        if(reconcile_stray_releases(err, model, record->child_pid, fd_resource_class, identifier) != 0)
         {
             return -1;
         }
@@ -742,6 +746,8 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
     finding->sequence               = record->sequence;
     finding->previous_sequence      = 0U;
     finding->line_number            = record->line_number;
+    finding->monotonic_ns           = record->monotonic_ns;
+    finding->monotonic_ns_available = record->monotonic_ns_available != 0;
     finding->function_name          = copy_text(err, record->function_name == NULL ? "?" : record->function_name);
     finding->file_name              = copy_text(err, record->file_name == NULL ? "?" : record->file_name);
     finding->previous_line_number   = 0;
@@ -768,6 +774,73 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
         memset(finding, 0, sizeof(*finding));
         model->finding_count--;
         return -1;
+    }
+    return 0;
+}
+
+static void destroy_finding(struct p101_tool_event_lifecycle_finding *finding)
+{
+    free(finding->resource_class);
+    free(finding->resource_id);
+    free(finding->function_name);
+    free(finding->previous_function_name);
+    free(finding->file_name);
+    free(finding->previous_file_name);
+    memset(finding, 0, sizeof(*finding));
+}
+
+static bool take_stray_release(struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id, struct p101_tool_event_lifecycle_finding *finding)
+{
+    for(size_t index = 0U; index < model->finding_count; index++)
+    {
+        const struct p101_tool_event_lifecycle_finding *candidate;
+
+        candidate = &model->findings[index];
+        if(candidate->kind != P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE || candidate->pid != pid || strcmp(candidate->resource_class, resource_class) != 0 || strcmp(candidate->resource_id, resource_id) != 0)
+        {
+            continue;
+        }
+
+        *finding = *candidate;
+        if(index + 1U < model->finding_count)
+        {
+            memmove(&model->findings[index], &model->findings[index + 1U], (model->finding_count - index - 1U) * sizeof(*model->findings));
+        }
+        model->finding_count--;
+        memset(&model->findings[model->finding_count], 0, sizeof(*model->findings));
+        return true;
+    }
+    return false;
+}
+
+static int reconcile_stray_releases(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, long pid, const char *resource_class, const char *resource_id)
+{
+    struct p101_tool_event_lifecycle_finding finding;
+
+    while(take_stray_release(model, pid, resource_class, resource_id, &finding))
+    {
+        struct p101_tool_event_record release;
+        int                           result;
+
+        memset(&release, 0, sizeof(release));
+        release.record_kind            = finding.origin_kind;
+        release.pid                    = finding.pid;
+        release.context_id             = finding.context_id;
+        release.sequence               = finding.sequence;
+        release.monotonic_ns           = finding.monotonic_ns;
+        release.monotonic_ns_available = (int)finding.monotonic_ns_available;
+        release.resource_kind          = P101_TOOL_EVENT_RESOURCE_RELEASE;
+        release.resource_class         = finding.resource_class;
+        release.resource_id            = finding.resource_id;
+        release.line_number            = finding.line_number;
+        release.function_name          = finding.function_name;
+        release.file_name              = finding.file_name;
+        result                         = release_entry(err, model, &release);
+        destroy_finding(&finding);
+        if(result != 0)
+        {
+            return -1;
+        }
     }
     return 0;
 }

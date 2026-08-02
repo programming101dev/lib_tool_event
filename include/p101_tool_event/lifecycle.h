@@ -61,6 +61,8 @@ extern "C"
         char                                  *previous_function_name;
         char                                  *file_name;
         char                                  *previous_file_name;
+        size_t                                 monotonic_ns;
+        bool                                   monotonic_ns_available;
     };
 
     struct p101_tool_event_lifecycle_model;
