@@ -30,7 +30,9 @@ target_include_directories(p101_tool_event_under_test PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../include"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/include"
 )
-target_compile_definitions(p101_tool_event_under_test PRIVATE P101_TOOL_EVENT_TESTING=1)
+target_compile_definitions(p101_tool_event_under_test PRIVATE
+        P101_TOOL_EVENT_TESTING=1
+        _POSIX_C_SOURCE=200809L)
 
 add_library(p101_error_under_test STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/src/error.c"
@@ -38,6 +40,8 @@ add_library(p101_error_under_test STATIC
 target_include_directories(p101_error_under_test PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/include"
 )
+target_compile_definitions(p101_error_under_test PRIVATE
+        _POSIX_C_SOURCE=200809L)
 
 add_executable(test_p101_tool_event test_event.c)
 target_link_libraries(test_p101_tool_event PRIVATE p101_tool_event_under_test p101_error_under_test Threads::Threads)
