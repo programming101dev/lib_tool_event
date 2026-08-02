@@ -21,6 +21,7 @@ src/event.c:p101_tool_event_write:write
 src/lifecycle.c:*:free
 src/lifecycle.c:*:malloc
 src/lifecycle.c:*:memcpy
+src/lifecycle.c:*:memmove
 src/lifecycle.c:*:memset
 src/lifecycle.c:*:realloc
 src/lifecycle.c:format_fd_identifier:snprintf
