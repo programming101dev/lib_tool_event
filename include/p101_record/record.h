@@ -2,6 +2,7 @@
 #define P101_RECORD_RECORD_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -15,6 +16,8 @@ extern "C"
     char *p101_record_split(char **cursor);
     void  p101_record_unescape_field(char *field);
     int   p101_record_parse_size(const char *text, size_t *out);
+    int   p101_record_write_json_string(FILE *stream, const char *text);
+    int   p101_record_write_json_string_contents(FILE *stream, const char *text);
 
 #ifdef __cplusplus
 }

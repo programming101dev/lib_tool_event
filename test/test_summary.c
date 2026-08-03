@@ -15,7 +15,7 @@ static int failures;
         }                                                                                                                                                                                                                                                          \
     } while(0)
 
-static const char valid_summary[] = "{\"schema\":\"p101-resource-tracker-findings-v3\",\"records\":1,\"fd_leaks\":2,\"allocation_leaks\":3,\"bad_releases\":4,\"exec_inheritances\":5,\"generic_resource_leaks\":6,\"generic_bad_releases\":7,"
+static const char valid_summary[] = "{\"schema\":\"p101-resource-policy-findings-v1\",\"records\":1,\"fd_leaks\":2,\"allocation_leaks\":3,\"bad_releases\":4,\"exec_inheritances\":5,\"generic_resource_leaks\":6,\"generic_bad_releases\":7,"
                                     "\"malformed\":8,\"bad_version\":9,\"refused\":10,\"log_health\":{\"complete\":true}}";
 
 static void replace_once(char *output, size_t output_size, const char *source, const char *needle, const char *replacement)
@@ -190,9 +190,9 @@ static void test_summary_structure_failures(void)
         "{",
         "{\"schema\"}",
         "{\"schema\":}",
-        "{\"schema\":\"p101-resource-tracker-findings-v3\" trailing}",
+        "{\"schema\":\"p101-resource-policy-findings-v1\" trailing}",
         "{\"schema\":\"wrong\",\"records\":1,\"fd_leaks\":2,\"allocation_leaks\":3,\"bad_releases\":4,\"exec_inheritances\":5,\"generic_resource_leaks\":6,\"generic_bad_releases\":7,\"malformed\":8,\"bad_version\":9,\"refused\":10,\"log_health\":{\"complete\":true}}",
-        "{\"schema\":\"p101-resource-tracker-findings-v3\",\"schema\":\"p101-resource-tracker-findings-v3\"}",
+        "{\"schema\":\"p101-resource-policy-findings-v1\",\"schema\":\"p101-resource-policy-findings-v1\"}",
         "{\"schema\":7}",
         "{\"unknown\":?}",
         "{\"log_health\":false}",

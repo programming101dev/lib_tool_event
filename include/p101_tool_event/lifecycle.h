@@ -16,7 +16,8 @@ extern "C"
         P101_TOOL_EVENT_LIFECYCLE_FINDING_DOUBLE_RELEASE,
         P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE,
         P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE,
-        P101_TOOL_EVENT_LIFECYCLE_FINDING_DUPLICATE_ACQUIRE
+        P101_TOOL_EVENT_LIFECYCLE_FINDING_DUPLICATE_ACQUIRE,
+        P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT
     } p101_tool_event_lifecycle_finding_kind;
 
     struct p101_tool_event_lifecycle_entry
@@ -63,6 +64,7 @@ extern "C"
         char                                  *previous_file_name;
         size_t                                 monotonic_ns;
         bool                                   monotonic_ns_available;
+        bool                                   exec_pending;
     };
 
     struct p101_tool_event_lifecycle_model;

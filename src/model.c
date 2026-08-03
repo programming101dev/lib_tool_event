@@ -27,6 +27,8 @@ static int    lifetime_matches(const struct p101_tool_model_node *birth, const s
 static int    pointer_is_null(const char *text);
 static int    build_call_edges(struct p101_error *err, struct p101_tool_model *model, size_t *matched_exit);
 static int    build_resource_edges(struct p101_error *err, struct p101_tool_model *model, const size_t *matched_exit);
+static int    build_lifecycle(struct p101_error *err, struct p101_tool_model *model);
+static void   record_from_node(const struct p101_tool_model_owned_node *owned, struct p101_tool_event_record *record);
 static void  *model_allocate(size_t size);
 static void  *model_callocate(size_t count, size_t size);
 static void  *model_reallocate(void *memory, size_t size);
@@ -120,6 +122,7 @@ void p101_tool_model_destroy(struct p101_tool_model **model)
     free((*model)->nodes);
     free((*model)->edges);
     free((*model)->run_id);
+    p101_tool_event_lifecycle_destroy(&(*model)->lifecycle);
     free(*model);
     *model = NULL;
 }
@@ -185,8 +188,9 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
      * own no storage, so rebuilding from the admitted nodes is safe.
      */
     model->edge_count = 0U;
-    matched_exit      = NULL;
-    result            = -1;
+    p101_tool_event_lifecycle_destroy(&model->lifecycle);
+    matched_exit = NULL;
+    result       = -1;
     if(model->node_count > 0U)
     {
         matched_exit = (size_t *)model_allocate(model->node_count * sizeof(*matched_exit));
@@ -200,7 +204,7 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
             matched_exit[index] = SIZE_MAX;
         }
     }
-    if(build_call_edges(err, model, matched_exit) != 0 || build_resource_edges(err, model, matched_exit) != 0)
+    if(build_call_edges(err, model, matched_exit) != 0 || build_resource_edges(err, model, matched_exit) != 0 || build_lifecycle(err, model) != 0)
     {
         model->edge_count = 0U;
         goto done;
@@ -211,6 +215,81 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
 done:
     free(matched_exit);
     return result;
+}
+
+static int build_lifecycle(struct p101_error *err, struct p101_tool_model *model)
+{
+    model->lifecycle = p101_tool_event_lifecycle_create(err);
+    if(model->lifecycle == NULL)
+    {
+        return -1;
+    }
+    for(size_t index = 0U; index < model->node_count; index++)
+    {
+        const struct p101_tool_model_owned_node *node;
+        struct p101_tool_event_record            record;
+
+        node = &model->nodes[index];
+        if(node->value.domain != P101_TOOL_MODEL_NODE_RESOURCE)
+        {
+            continue;
+        }
+        if(node->value.record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
+        {
+            continue;
+        }
+        record_from_node(node, &record);
+        if(p101_tool_event_lifecycle_ingest(err, model->lifecycle, &record) != 0)
+        {
+            p101_tool_event_lifecycle_destroy(&model->lifecycle);
+            return -1;
+        }
+    }
+    if(p101_tool_event_lifecycle_finish(err, model->lifecycle) != 0)
+    {
+        p101_tool_event_lifecycle_destroy(&model->lifecycle);
+        return -1;
+    }
+    return 0;
+}
+
+static void record_from_node(const struct p101_tool_model_owned_node *owned, struct p101_tool_event_record *record)
+{
+    const struct p101_tool_model_node *node;
+
+    node = &owned->value;
+    memset(record, 0, sizeof(*record));
+    record->version                = P101_TOOL_EVENT_LOG_VERSION;
+    record->record_kind            = node->record_kind;
+    record->call_kind              = node->call_kind;
+    record->fd_kind                = node->fd_kind;
+    record->alloc_kind             = node->alloc_kind;
+    record->resource_kind          = node->resource_kind;
+    record->run_id                 = owned->run_id;
+    record->pid                    = node->pid;
+    record->child_pid              = node->child_pid;
+    record->context_id             = node->context_id;
+    record->sequence               = node->sequence;
+    record->monotonic_ns           = node->monotonic_ns;
+    record->wall_unix_ns           = node->wall_unix_ns;
+    record->monotonic_ns_available = (int)node->monotonic_ns_available;
+    record->wall_unix_ns_available = (int)node->wall_unix_ns_available;
+    record->fd                     = node->fd;
+    record->cloexec                = (int)node->cloexec;
+    record->size                   = node->size;
+    record->line_number            = node->line_number;
+    record->function_name          = owned->function_name;
+    record->file_name              = owned->file_name;
+    record->call_name              = owned->call_name;
+    record->arguments              = owned->arguments;
+    record->result                 = owned->result;
+    record->ptr                    = owned->ptr;
+    record->new_ptr                = owned->new_ptr;
+    record->target                 = owned->target;
+    record->resource_class         = owned->resource_class;
+    record->resource_id            = owned->resource_id;
+    record->related_id             = owned->related_id;
+    record->metadata               = owned->metadata;
 }
 
 size_t p101_tool_model_node_count(const struct p101_tool_model *model)
@@ -402,7 +481,12 @@ static void free_node(struct p101_tool_model_owned_node *node)
 
 static int same_context(const struct p101_tool_model_node *left, const struct p101_tool_model_node *right)
 {
-    return strcmp(left->run_id, right->run_id) == 0 && left->pid == right->pid && left->context_id == right->context_id;
+    /*
+     * Ingestion rejects mixed run identifiers, so every node in one model
+     * already has the same run identity. Rechecking it here added an
+     * unreachable branch without strengthening the causal match.
+     */
+    return left->pid == right->pid && left->context_id == right->context_id;
 }
 
 static size_t find_active_enter(const struct p101_tool_model *model, const size_t *matched_exit, size_t node_index, int require_name)

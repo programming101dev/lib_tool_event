@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <p101_record/record.h>
 #include <p101_tool_event/receipt.h>
 #include <string.h>
 #include <unistd.h>
@@ -8,8 +9,7 @@
 enum
 {
     READ_BUFFER_SIZE = 4096,
-    FNV_WORD_BITS    = 32,
-    JSON_CONTROL_END = 0x20
+    FNV_WORD_BITS    = 32
 };
 
 static const uint64_t FNV1A64_OFFSET = UINT64_C(14695981039346656037);
@@ -76,9 +76,9 @@ static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
     }
     if(receipt->outcome == P101_TOOL_OUTCOME_CLEAN)
     {
-        return receipt->failure_reason == P101_TOOL_FAILURE_NONE && receipt->failed_stage[0] == '\0' && receipt->first_diagnostic[0] == '\0';
+        return receipt->failed_stage[0] == '\0' && receipt->first_diagnostic[0] == '\0';
     }
-    return receipt->failure_reason != P101_TOOL_FAILURE_NONE && receipt->failed_stage[0] != '\0' && receipt->first_diagnostic[0] != '\0';
+    return receipt->failed_stage[0] != '\0' && receipt->first_diagnostic[0] != '\0';
 }
 
 static int receipt_put_json_string(FILE *stream, const char *value)
@@ -99,78 +99,7 @@ static int receipt_put_json_string(FILE *stream, const char *value)
         errno = EFBIG;
         return -1;
     }
-    // GCOVR_EXCL_BR_START: individual stdio failure sites are not portable to
-    // inject; the public writer's staged failures verify phase propagation.
-    if(fputc('"', stream) == EOF)
-    {
-        return -1;
-    }
-    for(size_t index = 0U; index < length; index++)
-    {
-        unsigned char character;
-
-        character = (unsigned char)value[index];
-        switch(character)
-        {
-            case '"':
-                if(fputs("\\\"", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\\':
-                if(fputs("\\\\", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\b':
-                if(fputs("\\b", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\f':
-                if(fputs("\\f", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\n':
-                if(fputs("\\n", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\r':
-                if(fputs("\\r", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            case '\t':
-                if(fputs("\\t", stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-            default:
-                if(character < JSON_CONTROL_END)
-                {
-                    if(fprintf(stream, "\\u%04x", (unsigned int)character) < 0)
-                    {
-                        return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                    }
-                }
-                else if(fputc((int)character, stream) == EOF)
-                {
-                    return -1;    // GCOVR_EXCL_LINE -- public staged failure covers propagation.
-                }
-                break;
-        }
-    }
-    return fputc('"', stream) == EOF ? -1 : 0;
-    // GCOVR_EXCL_BR_STOP
+    return p101_record_write_json_string(stream, value);
 }
 
 static int receipt_write_failed(struct p101_error *err)

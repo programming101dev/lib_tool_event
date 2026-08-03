@@ -233,7 +233,7 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
                 return false;
             }
             seen |= SEEN_SCHEMA;
-            schema_ok = strcmp(schema, "p101-resource-tracker-findings-v3") == 0;
+            schema_ok = strcmp(schema, "p101-resource-policy-findings-v1") == 0;
         }
         else if(strcmp(key, "records") == 0)
         {

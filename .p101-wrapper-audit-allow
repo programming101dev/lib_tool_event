@@ -53,12 +53,14 @@ src/model_cli.c:*:memset
 src/model_cli.c:*:strcmp
 src/receipt.c:*:close
 src/receipt.c:*:fprintf
-src/receipt.c:*:fputc
 src/receipt.c:*:fputs
 src/receipt.c:*:memset
 src/receipt.c:*:open
 src/receipt.c:*:read
 src/receipt.c:*:strlen
+src/record.c:*:fprintf
+src/record.c:*:fputc
+src/record.c:*:fputs
 src/summary.c:find_top_level_size:strcmp
 src/summary.c:is_hex_digit:strchr
 src/summary.c:key_text:memcpy

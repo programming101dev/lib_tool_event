@@ -33,6 +33,21 @@ static p101_tool_event_parse_status parse_text(const char *text, struct p101_too
     return p101_tool_event_parse_line(line, record);
 }
 
+static void expect_json_contents_write_failure(const char *text)
+{
+    FILE *stream;
+
+    stream = tmpfile();
+    EXPECT(stream != NULL);
+    if(stream != NULL)
+    {
+        EXPECT(setvbuf(stream, NULL, _IONBF, 0U) == 0);
+        EXPECT(close(fileno(stream)) == 0);
+        EXPECT(p101_record_write_json_string_contents(stream, text) == -1);
+        (void)fclose(stream);
+    }
+}
+
 static void test_line_reader(void)
 {
     char               line[8];
@@ -107,6 +122,8 @@ static void test_small_helpers(void)
     char   split_text[] = "one\ttwo";
     char  *cursor;
     char   escaped[] = "a\\tb\\nc\\rd\\\\e\\q\\";
+    char   json[128];
+    FILE  *stream;
     size_t value;
 
     EXPECT(!p101_tool_event_line_is_ours(NULL));
@@ -136,6 +153,46 @@ static void test_small_helpers(void)
     EXPECT(!p101_record_parse_size("999999999999999999999999999999999999", &value));
     EXPECT(p101_record_parse_size("0", &value) && value == 0U);
     EXPECT(p101_record_parse_size("42", &value) && value == 42U);
+    EXPECT(p101_record_write_json_string(NULL, "x") == -1 && errno == EINVAL);
+    EXPECT(p101_record_write_json_string(NULL, NULL) == -1 && errno == EINVAL);
+    EXPECT(p101_record_write_json_string_contents(NULL, "x") == -1 && errno == EINVAL);
+    EXPECT(p101_record_write_json_string_contents(NULL, NULL) == -1 && errno == EINVAL);
+    stream = tmpfile();
+    EXPECT(stream != NULL);
+    if(stream != NULL)
+    {
+        EXPECT(p101_record_write_json_string(stream, "\"\\\b\f\n\r\t\1z") == 0);
+        rewind(stream);
+        EXPECT(fgets(json, sizeof(json), stream) != NULL);
+        EXPECT(strcmp(json, "\"\\\"\\\\\\b\\f\\n\\r\\t\\u0001z\"") == 0);
+        EXPECT(fclose(stream) == 0);
+    }
+    stream = tmpfile();
+    EXPECT(stream != NULL);
+    if(stream != NULL)
+    {
+        EXPECT(p101_record_write_json_string(stream, NULL) == -1 && errno == EINVAL);
+        EXPECT(p101_record_write_json_string_contents(stream, NULL) == -1 && errno == EINVAL);
+        EXPECT(fclose(stream) == 0);
+    }
+    stream = tmpfile();
+    EXPECT(stream != NULL);
+    if(stream != NULL)
+    {
+        EXPECT(setvbuf(stream, NULL, _IONBF, 0U) == 0);
+        EXPECT(close(fileno(stream)) == 0);
+        EXPECT(p101_record_write_json_string(stream, "x") == -1);
+        (void)fclose(stream);
+    }
+    expect_json_contents_write_failure("\"");
+    expect_json_contents_write_failure("\\");
+    expect_json_contents_write_failure("\b");
+    expect_json_contents_write_failure("\f");
+    expect_json_contents_write_failure("\n");
+    expect_json_contents_write_failure("\r");
+    expect_json_contents_write_failure("\t");
+    expect_json_contents_write_failure("\1");
+    expect_json_contents_write_failure("z");
 
     EXPECT(strcmp(p101_tool_event_parse_status_name(P101_TOOL_EVENT_PARSE_OTHER), "not a p101 event record") == 0);
     EXPECT(strcmp(p101_tool_event_parse_status_name(P101_TOOL_EVENT_PARSE_OK), "ok") == 0);
@@ -148,13 +205,13 @@ static void test_valid_parser_records(void)
 {
     static const char *const records[] = {
         "P101FD\t5\ttest\t1\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
-        "P101FD\t5\ttest\t1\t2\t3\t4\t5\tCLOSE\t1048576\t2147483647\tf\tc\r\n",
+        "P101FD\t5\ttest\t1\t2\t3\t5\t5\tCLOSE\t1048576\t2147483647\tf\tc\r\n",
         "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tALLOC\t0x1\t-\t5\t1\tf\tc\n",
         "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tFREE\t0x1\t-\t0\t1\tf\tc\n",
         "P101ALLOC\t5\ttest\t1\t2\t3\t-\t-\tREALLOC\t0x1\t0x2\t9\t1\tf\tc\n",
         "P101FORK\t5\ttest\t1\t2\t3\t-\t-\t2\t1\tf\tc\n",
         "P101SPAWN\t5\ttest\t1\t2\t3\t-\t-\t2\t1\tf\tc\ttarget\n",
-        "P101EXEC\t5\ttest\t1\t2\t3\t-\t-\t4\t0\t1\tf\tc\ttarget\n",
+        "P101EXEC\t5\ttest\t1\t2\t3\t-\t-\t5\t0\t1\tf\tc\ttarget\n",
         "P101EXECFAIL\t5\ttest\t1\t2\t3\t-\t-\t1\tf\tc\ttarget\n",
         "P101CALL\t5\ttest\t1\t2\t3\t-\t-\tENTER\t1\tf\tcall\ta\\tb\t-\tc\n",
         "P101CALL\t5\ttest\t1\t2\t3\t-\t-\tEXIT\t1\tf\tcall\t-\tresult\tc\n",
@@ -178,58 +235,68 @@ static void test_malformed_parser_records(void)
     static const char *const malformed[] = {
         "P101FD",
         "P101FD\t",
-        "P101FD\t4\t1\t2\t3\t-\n",
-        "P101FD\t4\t\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
-        "P101FD\tx\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t-1\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\tx\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t-1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\tx\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\tx\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\tx\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\tx\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tBAD\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t-1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t1048577\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t1\t-1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t1\t2147483648\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t1\t1x\tf\tc\n",
-        "P101FD\t4\t999999999999999999999999999999999\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
-        "P101FD\t4\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tBAD\tp\t-\t1\t1\tf\tc\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tALLOC\tp\t-\t1\t1\tf\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tALLOC\tp\t-\tx\t1\tf\tc\n",
-        "P101ALLOC\t4\t1\t2\t3\t-\t-\tALLOC\tp\t-\t1\tx\tf\tc\n",
-        "P101FORK\t4\t1\t2\t3\t-\t-\t-1\t1\tf\tc\n",
-        "P101FORK\t4\t1\t2\t3\t-\t-\t1\tx\tf\tc\n",
-        "P101SPAWN\t4\t1\t2\t3\t-\t-\t1\t1\tf\tc\n",
-        "P101EXEC\t4\t1\t2\t3\t-\t-\t-1\t0\t1\tf\tc\tt\n",
-        "P101EXEC\t4\t1\t2\t3\t-\t-\t1\t2\t1\tf\tc\tt\n",
-        "P101EXEC\t4\t1\t2\t3\t-\t-\t1\t0\tx\tf\tc\tt\n",
-        "P101EXEC\t4\t1\t2\t3\t-\t-\t1\t0\t1\tf\tc\n",
-        "P101EXECFAIL\t4\t1\t2\t3\t-\t-\tx\tf\tc\tt\n",
-        "P101EXECFAIL\t4\t1\t2\t3\t-\t-\t1\tf\tc\n",
-        "P101CALL\t4\t1\t2\t3\t-\t-\tBAD\t1\tf\tc\ta\tr\tc\n",
-        "P101CALL\t4\t1\t2\t3\t-\t-\tENTER\t1\tf\tc\ta\tr\n",
-        "P101CALL\t4\t1\t2\t3\t-\t-\tENTER\tx\tf\tc\ta\tr\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tBAD\tc\ti\t-\t1\tm\t1\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\tx\tm\t1\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\t1\tm\tx\tf\tc\n",
-        "P101RESOURCE\t4\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\t1\tm\t1\tf\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\tx\t0\t0\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t1\t2\t0\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t1\t0\tx\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t1\t0\t1\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t1\t1\t0\n",
-        "P101COMPLETE\t4\t1\t2\t3\t-\t-\t1\t0\n",
+        "P101FD\t5\t1\t2\t3\t-\n",
+        "P101FD\t4\trun\t1\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
+        "P101FD\t5\t\t1\t2\t3\t-\t-\tOPEN\t0\t0\tf\tc\n",
+        "P101FD\tx\trun\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t-1\trun\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\tx\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t-1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t999999999999999999999999999999999\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\tx\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t-1\t3\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\tx\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t-1\t-\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\tx\t-\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\tx\tOPEN\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tBAD\t1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t-1\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t1048577\t1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t1\t-1\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t1\t2147483648\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t1\t1x\tf\tc\n",
+        "P101FD\t5\trun\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\n",
+        "P101ALLOC\t5\trun\t1\t2\t3\t-\t-\tBAD\tp\t-\t1\t1\tf\tc\n",
+        "P101ALLOC\t5\trun\t1\t2\t3\t-\t-\tALLOC\tp\t-\t1\t1\tf\n",
+        "P101ALLOC\t5\trun\t1\t2\t3\t-\t-\tALLOC\tp\t-\tx\t1\tf\tc\n",
+        "P101ALLOC\t5\trun\t1\t2\t3\t-\t-\tALLOC\tp\t-\t1\tx\tf\tc\n",
+        "P101FORK\t5\trun\t1\t2\t3\t-\t-\t-1\t1\tf\tc\n",
+        "P101FORK\t5\trun\t1\t2\t3\t-\t-\t1\tx\tf\tc\n",
+        "P101SPAWN\t5\trun\t1\t2\t3\t-\t-\t1\t1\tf\tc\n",
+        "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t-1\t0\t1\tf\tc\tt\n",
+        "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t2\t1\tf\tc\tt\n",
+        "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t0\tx\tf\tc\tt\n",
+        "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t0\t1\tf\tc\n",
+        "P101EXECFAIL\t5\trun\t1\t2\t3\t-\t-\tx\tf\tc\tt\n",
+        "P101EXECFAIL\t5\trun\t1\t2\t3\t-\t-\t1\tf\tc\n",
+        "P101CALL\t5\trun\t1\t2\t3\t-\t-\tBAD\t1\tf\tc\ta\tr\tc\n",
+        "P101CALL\t5\trun\t1\t2\t3\t-\t-\tENTER\t1\tf\tc\ta\tr\n",
+        "P101CALL\t5\trun\t1\t2\t3\t-\t-\tENTER\tx\tf\tc\ta\tr\tc\n",
+        "P101RESOURCE\t5\trun\t1\t2\t3\t-\t-\tBAD\tc\ti\t-\t1\tm\t1\tf\tc\n",
+        "P101RESOURCE\t5\trun\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\tx\tm\t1\tf\tc\n",
+        "P101RESOURCE\t5\trun\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\t1\tm\tx\tf\tc\n",
+        "P101RESOURCE\t5\trun\t1\t2\t3\t-\t-\tACQUIRE\tc\ti\t-\t1\tm\t1\tf\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\tx\t0\t0\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t2\t0\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t0\tx\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t0\t1\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t1\t0\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t0\n",
     };
     struct p101_tool_event_record record;
-    char                          too_many[512] = "P101FD\t4\t1\t2\t3\t-\t-";
+    char                          too_many[512] = "P101FD\t5\trun\t1\t2\t3\t-\t-";
+    char                          overlong_run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 2U];
+    char                          overlong_record[P101_TOOL_EVENT_LINE_MAX_BYTES];
 
     EXPECT(p101_tool_event_parse_line(NULL, &record) == P101_TOOL_EVENT_PARSE_MALFORMED);
     EXPECT(p101_tool_event_parse_line(too_many, NULL) == P101_TOOL_EVENT_PARSE_MALFORMED);
     EXPECT(parse_text("not ours\n", &record) == P101_TOOL_EVENT_PARSE_OTHER);
-    EXPECT(parse_text("P101WHAT\t4\t1\t2\t3\t-\t-\n", &record) == P101_TOOL_EVENT_PARSE_OTHER);
+    EXPECT(parse_text("P101WHAT\t5\t1\t2\t3\t-\t-\n", &record) == P101_TOOL_EVENT_PARSE_OTHER);
+    memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
+    overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
+    (void)snprintf(overlong_record, sizeof(overlong_record), "P101FD\t5\t%s\t1\t2\t3\t-\t-\tOPEN\t1\t1\tf\tc\n", overlong_run_id);
+    EXPECT(parse_text(overlong_record, &record) == P101_TOOL_EVENT_PARSE_MALFORMED);
     for(size_t index = 0U; index < sizeof(malformed) / sizeof(malformed[0]); index++)
     {
         EXPECT(parse_text(malformed[index], &record) != P101_TOOL_EVENT_PARSE_OK);
@@ -345,6 +412,7 @@ static void test_invalid_writer_records(void)
 {
     struct p101_tool_event_output output;
     FILE                         *stream;
+    char                          overlong_run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 2U];
 
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     EXPECT(p101_tool_event_write(NULL, &output) == -1);
@@ -359,6 +427,11 @@ static void test_invalid_writer_records(void)
     expect_invalid_output(&output);
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     output.run_id = "";
+    expect_invalid_output(&output);
+    set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
+    memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
+    overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
+    output.run_id = overlong_run_id;
     expect_invalid_output(&output);
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     output.pid = -1;

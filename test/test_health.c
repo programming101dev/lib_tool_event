@@ -20,6 +20,7 @@ static void test_invalid_and_allocation_failure(void)
 {
     struct p101_tool_event_stream_health health = {0};
     struct p101_tool_event_record        record = {0};
+    char                                 overlong_run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 2U];
 
     EXPECT(p101_tool_event_stream_health_observe(NULL, &record) == -1);
     EXPECT(errno == EINVAL);
@@ -27,6 +28,14 @@ static void test_invalid_and_allocation_failure(void)
     EXPECT(errno == EINVAL);
     EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
     EXPECT(health.invalid_run_ids == 1U);
+    record.run_id = "";
+    EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
+    EXPECT(health.invalid_run_ids == 2U);
+    memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
+    overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
+    record.run_id = overlong_run_id;
+    EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
+    EXPECT(health.invalid_run_ids == 3U);
     EXPECT(!p101_tool_event_stream_health_is_complete(&health));
     record.run_id = "allocation";
     p101_tool_event_test_force_health_allocation_failure();

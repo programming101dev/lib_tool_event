@@ -262,7 +262,13 @@ static int ingest_resource(struct p101_error *err, struct p101_tool_event_lifecy
             break;
         case P101_TOOL_EVENT_RESOURCE_REPLACE:
         case P101_TOOL_EVENT_RESOURCE_TRANSFER:
-            if(record->related_id == NULL)
+            /*
+             * The owned causal model represents absent optional text as an
+             * empty string. Treat that representation exactly like the
+             * parser's NULL value instead of creating a phantom empty-ID
+             * resource during lifecycle reconstruction.
+             */
+            if(record->related_id == NULL || record->related_id[0] == '\0')
             {
                 result = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, record, find_latest(model, record->pid, record->resource_class, record->resource_id, false));
             }
@@ -450,7 +456,7 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
 
 static bool pointer_is_null_text(const char *text)
 {
-    return (text == NULL || strcmp(text, "-") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "0x0") == 0) != 0;
+    return (text == NULL || text[0] == '\0' || strcmp(text, "-") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "0x0") == 0) != 0;
 }
 
 static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
@@ -459,10 +465,6 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
     struct p101_tool_event_record           normalized;
     char                                    identifier[FD_IDENTIFIER_LENGTH];
 
-    if(record->cloexec == 0)
-    {
-        return 0;
-    }
     if(format_fd_identifier(identifier, sizeof(identifier), record->fd) < 0)
     {
         P101_ERROR_RAISE_CHECK(err);
@@ -472,6 +474,14 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
     if(entry == NULL)
     {
         return 0;
+    }
+    if(record->cloexec == 0)
+    {
+        normalized                = *record;
+        normalized.resource_kind  = P101_TOOL_EVENT_RESOURCE_RELEASE;
+        normalized.resource_class = fd_resource_class;
+        normalized.resource_id    = identifier;
+        return add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT, &normalized, entry);
     }
 
     normalized                = *record;
@@ -488,6 +498,8 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
 
 static void rollback_exec(struct p101_tool_event_lifecycle_model *model, long pid)
 {
+    size_t write_index;
+
     for(size_t index = 0U; index < model->entry_count; index++)
     {
         struct p101_tool_event_lifecycle_entry *entry;
@@ -509,6 +521,25 @@ static void rollback_exec(struct p101_tool_event_lifecycle_model *model, long pi
         entry->live                            = true;
         entry->exec_pending                    = false;
     }
+    write_index = 0U;
+    for(size_t index = 0U; index < model->finding_count; index++)
+    {
+        struct p101_tool_event_lifecycle_finding *finding;
+
+        finding = &model->findings[index];
+        if(finding->pid == pid && finding->exec_pending)
+        {
+            destroy_finding(finding);
+            continue;
+        }
+        if(write_index != index)    // GCOVR_EXCL_BR_LINE -- unit tests exercise both semantic outcomes; llvm-cov also reports a synthetic loop arc here.
+        {
+            model->findings[write_index] = model->findings[index];
+            memset(&model->findings[index], 0, sizeof(model->findings[index]));
+        }
+        write_index++;    // GCOVR_EXCL_BR_LINE -- llvm-cov attributes the enclosing loop-exit arc to this increment.
+    }
+    model->finding_count = write_index;
 }
 
 int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_event_lifecycle_model *model)
@@ -537,6 +568,10 @@ int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_ev
         {
             return -1;
         }
+    }
+    for(size_t i = 0U; i < model->finding_count; i++)
+    {
+        model->findings[i].exec_pending = false;
     }
     model->finished = 1;
     return 0;
@@ -758,6 +793,7 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
     finding->line_number            = record->line_number;
     finding->monotonic_ns           = record->monotonic_ns;
     finding->monotonic_ns_available = record->monotonic_ns_available != 0;
+    finding->exec_pending           = kind == P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT;
     finding->function_name          = copy_text(err, record->function_name == NULL ? "?" : record->function_name);
     finding->file_name              = copy_text(err, record->file_name == NULL ? "?" : record->file_name);
     finding->previous_line_number   = 0;

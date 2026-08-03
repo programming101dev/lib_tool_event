@@ -307,7 +307,7 @@ static void test_shared_ownership_semantics(void)
 
 static void test_shared_resource_summary_parser(void)
 {
-    static const char                       json[] = "{\"schema\":\"p101-resource-tracker-findings-v3\",\"records\":9,\"fd_leaks\":1,\"allocation_leaks\":2,\"bad_releases\":3,\"exec_inheritances\":4,\"generic_resource_leaks\":5,\"generic_bad_releases\":6,"
+    static const char                       json[] = "{\"schema\":\"p101-resource-policy-findings-v1\",\"records\":9,\"fd_leaks\":1,\"allocation_leaks\":2,\"bad_releases\":3,\"exec_inheritances\":4,\"generic_resource_leaks\":5,\"generic_bad_releases\":6,"
                                                      "\"malformed\":0,\"bad_version\":0,\"refused\":0,\"log_health\":{\"complete\":true,\"producers\":1},\"findings\":[]}";
     struct p101_tool_event_resource_summary summary;
 

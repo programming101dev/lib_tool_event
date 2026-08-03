@@ -1,6 +1,7 @@
 #ifndef P101_TOOL_EVENT_MODEL_INTERNAL_H
 #define P101_TOOL_EVENT_MODEL_INTERNAL_H
 
+#include <p101_tool_event/lifecycle.h>
 #include <p101_tool_event/model.h>
 
 struct p101_tool_model_owned_node
@@ -30,6 +31,7 @@ struct p101_tool_model
     struct p101_tool_model_edge       *edges;
     size_t                             edge_count;
     size_t                             edge_capacity;
+    struct p101_tool_event_lifecycle_model *lifecycle;
     int                                finished;
 };
 

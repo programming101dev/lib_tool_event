@@ -1,6 +1,7 @@
 #include "model_internal.h"
 #include <errno.h>
 #include <p101_error/error.h>
+#include <p101_record/record.h>
 #include <stdio.h>
 
 #ifdef P101_TOOL_EVENT_TESTING
@@ -70,11 +71,6 @@ static int test_fflush(FILE *stream)
     #define fflush test_fflush
 #endif
 
-enum
-{
-    JSON_CONTROL_CHARACTER_LIMIT = 0x20U
-};
-
 static int         write_json_string(FILE *stream, const char *text);
 static int         write_json_string_contents(FILE *stream, const char *text);
 static int         write_source(FILE *stream, const struct p101_tool_model_node *node);
@@ -83,8 +79,13 @@ static int         write_resource_fields(FILE *stream, const struct p101_tool_mo
 static int         write_node(FILE *stream, const struct p101_tool_model_node *node);
 static int         write_nodes(FILE *stream, const struct p101_tool_model *model);
 static int         write_edges(FILE *stream, const struct p101_tool_model *model);
+static int         write_lifecycle(FILE *stream, const struct p101_tool_model *model);
+static int         write_lifecycle_entry(FILE *stream, const struct p101_tool_event_lifecycle_entry *entry);
+static int         write_lifecycle_finding(FILE *stream, const struct p101_tool_event_lifecycle_finding *finding);
+static int         write_lifecycle_location(FILE *stream, size_t context, size_t sequence, size_t monotonic_ns, bool monotonic_available, const char *file_name, int line_number, const char *function_name);
 static const char *node_kind_name(const struct p101_tool_model_node *node);
 static const char *edge_kind_name(p101_tool_model_edge_kind kind);
+static const char *lifecycle_finding_kind_name(p101_tool_event_lifecycle_finding_kind kind);
 static int         write_node_id(FILE *stream, const struct p101_tool_model_node *node);
 static const char *fd_kind_name(p101_tool_event_fd_kind kind);
 static const char *alloc_kind_name(p101_tool_event_alloc_kind kind);
@@ -123,12 +124,172 @@ int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struc
                P101_TOOL_EVENT_SCHEMA_NAME,
                calls,
                resources) < 0 ||
-       write_nodes(stream, model) != 0 || fputs(",\n", stream) == EOF || write_edges(stream, model) != 0 || fputs("\n}\n", stream) == EOF || fflush(stream) != 0)
+       write_nodes(stream, model) != 0 || fputs(",\n", stream) == EOF || write_edges(stream, model) != 0 || fputs(",\n", stream) == EOF || write_lifecycle(stream, model) != 0 || fputs("\n}\n", stream) == EOF || fflush(stream) != 0)
     {
         P101_ERROR_RAISE_ERRNO(err, EIO);
         return -1;
     }
     return 0;
+}
+
+static int write_lifecycle(FILE *stream, const struct p101_tool_model *model)
+{
+    size_t entry_count;
+    size_t finding_count;
+
+    entry_count   = p101_tool_event_lifecycle_entry_count(model->lifecycle);
+    finding_count = p101_tool_event_lifecycle_finding_count(model->lifecycle);
+    if(fputs("  \"lifecycle\": {\n    \"entries\": [\n", stream) == EOF)
+    {
+        return -1;
+    }
+    for(size_t index = 0U; index < entry_count; index++)
+    {
+        const struct p101_tool_event_lifecycle_entry *entry;
+
+        entry = p101_tool_event_lifecycle_entry_at(model->lifecycle, index);
+        // GCOVR_EXCL_START: index is bounded by the count returned by the same
+        // lifecycle model, so a null entry would violate the library invariant.
+        if(entry == NULL)
+        {
+            return -1;
+        }
+        // GCOVR_EXCL_STOP
+        if((index > 0U && fputs(",\n", stream) == EOF) || write_lifecycle_entry(stream, entry) != 0)
+        {
+            return -1;
+        }
+    }
+    if(fputs("\n    ],\n    \"findings\": [\n", stream) == EOF)
+    {
+        return -1;
+    }
+    for(size_t index = 0U; index < finding_count; index++)
+    {
+        const struct p101_tool_event_lifecycle_finding *finding;
+
+        finding = p101_tool_event_lifecycle_finding_at(model->lifecycle, index);
+        // GCOVR_EXCL_START: index is bounded by the count returned by the same
+        // lifecycle model, so a null finding would violate the library invariant.
+        if(finding == NULL)
+        {
+            return -1;
+        }
+        // GCOVR_EXCL_STOP
+        if((index > 0U && fputs(",\n", stream) == EOF) || write_lifecycle_finding(stream, finding) != 0)
+        {
+            return -1;
+        }
+    }
+    return fputs("\n    ]\n  }", stream) == EOF ? -1 : 0;
+}
+
+static int write_lifecycle_entry(FILE *stream, const struct p101_tool_event_lifecycle_entry *entry)
+{
+    const char *live_text;
+
+    live_text = "false";
+    if(entry->live)
+    {
+        live_text = "true";
+    }
+    if(fputs("      {\"pid\":", stream) == EOF || fprintf(stream, "%ld,\"resource_class\":", entry->pid) < 0 || write_json_string(stream, entry->resource_class) != 0 || fputs(",\"identity\":", stream) == EOF ||
+       write_json_string(stream, entry->resource_id) != 0 || fprintf(stream, ",\"size\":%zu,\"live\":%s,\"acquired\":", entry->size, live_text) < 0 ||
+       write_lifecycle_location(stream, entry->acquired_context_id, entry->acquired_sequence, entry->acquired_monotonic_ns, entry->acquired_monotonic_ns_available, entry->acquired_file_name, entry->acquired_line_number, entry->acquired_function_name) != 0 ||
+       fputs(",\"released\":", stream) == EOF)
+    {
+        return -1;
+    }
+    if(entry->live)
+    {
+        if(fputs("null", stream) == EOF)
+        {
+            return -1;
+        }
+    }
+    else if(write_lifecycle_location(stream, entry->released_context_id, entry->released_sequence, entry->released_monotonic_ns, entry->released_monotonic_ns_available, entry->released_file_name, entry->released_line_number, entry->released_function_name) !=
+            0)
+    {
+        return -1;
+    }
+    return fputc('}', stream) == EOF ? -1 : 0;
+}
+
+static int write_lifecycle_finding(FILE *stream, const struct p101_tool_event_lifecycle_finding *finding)
+{
+    if(fputs("      {\"kind\":", stream) == EOF || write_json_string(stream, lifecycle_finding_kind_name(finding->kind)) != 0 || fprintf(stream, ",\"pid\":%ld,\"resource_class\":", finding->pid) < 0 || write_json_string(stream, finding->resource_class) != 0 ||
+       fputs(",\"identity\":", stream) == EOF || write_json_string(stream, finding->resource_id) != 0 || fputs(",\"at\":", stream) == EOF ||
+       write_lifecycle_location(stream, finding->context_id, finding->sequence, finding->monotonic_ns, finding->monotonic_ns_available, finding->file_name, finding->line_number, finding->function_name) != 0 || fputs(",\"previous\":", stream) == EOF)
+    {
+        return -1;
+    }
+    if(finding->previous_sequence == 0U)
+    {
+        if(fputs("null", stream) == EOF)
+        {
+            return -1;
+        }
+    }
+    else if(write_lifecycle_location(stream, finding->previous_context_id, finding->previous_sequence, 0U, false, finding->previous_file_name, finding->previous_line_number, finding->previous_function_name) != 0)
+    {
+        return -1;
+    }
+    return fputc('}', stream) == EOF ? -1 : 0;
+}
+
+static int write_lifecycle_location(FILE *stream, size_t context, size_t sequence, size_t monotonic_ns, bool monotonic_available, const char *file_name, int line_number, const char *function_name)
+{
+    if(fprintf(stream, "{\"context\":%zu,\"sequence\":%zu,\"monotonic_ns\":", context, sequence) < 0)
+    {
+        return -1;
+    }
+    if(monotonic_available)
+    {
+        if(fprintf(stream, "%zu", monotonic_ns) < 0)
+        {
+            return -1;
+        }
+    }
+    else if(fputs("null", stream) == EOF)
+    {
+        return -1;
+    }
+    /*
+     * Lifecycle construction normalizes missing source text to "?"; locations
+     * therefore never receive null names.
+     */
+    return fputs(",\"source\":{\"file\":", stream) == EOF || write_json_string(stream, file_name) != 0 || fprintf(stream, ",\"line\":%d,\"function\":", line_number) < 0 || write_json_string(stream, function_name) != 0 || fputs("}}", stream) == EOF ? -1 : 0;
+}
+
+static const char *lifecycle_finding_kind_name(p101_tool_event_lifecycle_finding_kind kind)
+{
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wcovered-switch-default"
+#endif
+    // GCOVR_EXCL_BR_START: every valid finding kind is exercised; the remaining
+    // edge is the defensive fallback for a value outside the closed enum.
+    switch(kind)
+    {
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK:
+            return "leak";
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_DOUBLE_RELEASE:
+            return "double-release";
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE:
+            return "stray-release";
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE:
+            return "bad-replace";
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_DUPLICATE_ACQUIRE:
+            return "duplicate-acquire";
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT:
+            return "exec-inherit";
+        default:
+            return "unknown";    // GCOVR_EXCL_LINE -- exhaustive enum defensive fallback.
+    }
+        // GCOVR_EXCL_BR_STOP
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 }
 
 static const char *node_kind_name(const struct p101_tool_model_node *node)
@@ -393,62 +554,12 @@ static int write_source(FILE *stream, const struct p101_tool_model_node *node)
 
 static int write_json_string(FILE *stream, const char *text)
 {
-    if(fputc('"', stream) == EOF || write_json_string_contents(stream, text) != 0)
-    {
-        return -1;
-    }
-    return fputc('"', stream) == EOF ? -1 : 0;
+    return p101_record_write_json_string(stream, text);
 }
 
 static int write_json_string_contents(FILE *stream, const char *text)
 {
-    const unsigned char *cursor;
-
-    cursor = (const unsigned char *)text;
-    while(*cursor != '\0')
-    {
-        if(*cursor == '"' || *cursor == '\\')
-        {
-            if(fputc('\\', stream) == EOF || fputc((int)*cursor, stream) == EOF)
-            {
-                return -1;
-            }
-        }
-        else if(*cursor == '\n')
-        {
-            if(fputs("\\n", stream) == EOF)
-            {
-                return -1;
-            }
-        }
-        else if(*cursor == '\r')
-        {
-            if(fputs("\\r", stream) == EOF)
-            {
-                return -1;
-            }
-        }
-        else if(*cursor == '\t')
-        {
-            if(fputs("\\t", stream) == EOF)
-            {
-                return -1;
-            }
-        }
-        else if(*cursor < JSON_CONTROL_CHARACTER_LIMIT)
-        {
-            if(fprintf(stream, "\\u%04x", (unsigned int)*cursor) < 0)
-            {
-                return -1;
-            }
-        }
-        else if(fputc((int)*cursor, stream) == EOF)
-        {
-            return -1;
-        }
-        cursor++;
-    }
-    return 0;
+    return p101_record_write_json_string_contents(stream, text);
 }
 
 static const char *fd_kind_name(p101_tool_event_fd_kind kind)

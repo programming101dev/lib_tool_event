@@ -50,6 +50,7 @@ static void test_public_boundaries(void)
     struct p101_error                      *err;
     struct p101_tool_event_lifecycle_model *model;
     struct p101_tool_event_record           record;
+    char                                    overlong_run_id[P101_TOOL_EVENT_RUN_ID_MAX_BYTES + 2U];
 
     model = new_model(&err);
     initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, "class", "id");
@@ -57,6 +58,22 @@ static void test_public_boundaries(void)
     p101_error_reset(err);
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, NULL) == -1);
     p101_error_reset(err);
+    record.version = P101_TOOL_EVENT_LOG_VERSION - 1;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    p101_error_reset(err);
+    record.version = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id  = NULL;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    p101_error_reset(err);
+    record.run_id = "";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    p101_error_reset(err);
+    memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
+    overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
+    record.run_id = overlong_run_id;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
+    p101_error_reset(err);
+    record.run_id      = "lifecycle-test";
     record.record_kind = P101_TOOL_EVENT_RECORD_CALL;
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
     p101_error_reset(err);
@@ -255,6 +272,42 @@ static void test_fork_and_exec_edges(void)
     record.record_kind = P101_TOOL_EVENT_RECORD_EXEC_FAIL;
     record.pid         = 999;
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+
+    initialize_resource(&record, P101_TOOL_EVENT_RESOURCE_ACQUIRE, "fd", "8");
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    memset(&record, 0, sizeof(record));
+    record.version     = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id      = "lifecycle-test";
+    record.record_kind = P101_TOOL_EVENT_RECORD_EXEC;
+    record.pid         = 1;
+    record.fd          = 8;
+    record.cloexec     = 0;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 1U);
+    EXPECT(p101_tool_event_lifecycle_finding_at(model, 0U)->kind == P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT);
+
+    memset(&record, 0, sizeof(record));
+    record.version       = P101_TOOL_EVENT_LOG_VERSION;
+    record.run_id        = "lifecycle-test";
+    record.record_kind   = P101_TOOL_EVENT_RECORD_FD;
+    record.fd_kind       = P101_TOOL_EVENT_FD_CLOSE;
+    record.pid           = 2;
+    record.fd            = 77;
+    record.function_name = "close";
+    record.file_name     = "fd.c";
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 2U);
+    record.pid = 1;
+    record.fd  = 78;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 3U);
+
+    record.record_kind = P101_TOOL_EVENT_RECORD_EXEC_FAIL;
+    record.pid         = 1;
+    EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == 0);
+    EXPECT(p101_tool_event_lifecycle_finding_count(model) == 2U);
+    EXPECT(p101_tool_event_lifecycle_finding_at(model, 0U)->kind == P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE);
+    EXPECT(p101_tool_event_lifecycle_finding_at(model, 1U)->kind == P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE);
 
     p101_tool_event_lifecycle_destroy(&model);
     p101_error_destroy(err);
