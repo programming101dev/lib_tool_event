@@ -346,6 +346,14 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
 
     health->records_observed++;
     producer->records_observed++;
+    if(record->record_kind == P101_TOOL_EVENT_RECORD_EXEC)
+    {
+        producer->pending_exec = 1;
+    }
+    else if(record->record_kind == P101_TOOL_EVENT_RECORD_EXEC_FAIL || record->record_kind == P101_TOOL_EVENT_RECORD_COMPLETE)
+    {
+        producer->pending_exec = 0;
+    }
     if(producer->completion_records > 0U)
     {
         producer->records_after_completion++;

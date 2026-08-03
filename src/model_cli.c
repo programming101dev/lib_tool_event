@@ -26,6 +26,9 @@ static int  ingest_path(struct p101_error *err, struct p101_tool_model *model, c
 static int  ingest_stream(struct p101_error *err, struct p101_tool_model *model, FILE *stream, bool calls, struct p101_tool_event_stream_health *health);
 static int  record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls);
 static int  write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path);
+static int  admitted_streams_are_complete(const struct p101_tool_event_stream_health *resource_health, const struct p101_tool_event_stream_health *call_health);
+static int  stream_integrity_is_valid(const struct p101_tool_event_stream_health *health);
+static int  producer_completed_or_execed(const struct p101_tool_event_producer_health *producer, const struct p101_tool_event_stream_health *resource_health);
 
 #ifdef P101_TOOL_EVENT_TESTING
 extern void p101_tool_event_test_model_fail_allocation_after(size_t successful_allocations);
@@ -73,7 +76,7 @@ int main(int argc, char *argv[])
     {
         goto done;
     }
-    if(!p101_tool_event_stream_health_is_complete(&resource_health) || !p101_tool_event_stream_health_is_complete(&call_health))
+    if(!admitted_streams_are_complete(&resource_health, &call_health))
     {
         (void)fputs("p101-event-model: an admitted event stream is incomplete\n", stderr);
         goto done;
@@ -254,6 +257,59 @@ static int record_belongs_in_stream(const struct p101_tool_event_record *record,
         return record->record_kind == P101_TOOL_EVENT_RECORD_CALL;
     }
     return record->record_kind != P101_TOOL_EVENT_RECORD_CALL;
+}
+
+static int admitted_streams_are_complete(const struct p101_tool_event_stream_health *resource_health, const struct p101_tool_event_stream_health *call_health)
+{
+    const struct p101_tool_event_stream_health *streams[] = {resource_health, call_health};
+
+    for(size_t stream = 0U; stream < sizeof(streams) / sizeof(streams[0]); stream++)
+    {
+        const struct p101_tool_event_stream_health *health;
+
+        health = streams[stream];
+        if(!stream_integrity_is_valid(health))
+        {
+            return 0;
+        }
+        for(size_t producer = 0U; producer < health->producer_count; producer++)
+        {
+            if(!producer_completed_or_execed(&health->producers[producer], resource_health))
+            {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int stream_integrity_is_valid(const struct p101_tool_event_stream_health *health)
+{
+    return health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U && health->attempted_count_mismatches == 0U &&
+           health->records_after_completion == 0U && health->distinct_run_ids == 1U && health->invalid_run_ids == 0U && health->mixed_run_ids == 0 && health->allocation_failed == 0;
+}
+
+static int producer_completed_or_execed(const struct p101_tool_event_producer_health *producer, const struct p101_tool_event_stream_health *resource_health)
+{
+    if(producer->completion_records == 1U && producer->write_failed == 0 && producer->attempted_count_mismatches == 0U)
+    {
+        return 1;
+    }
+    if(producer->completion_records != 0U || resource_health == NULL)
+    {
+        return 0;
+    }
+    for(size_t index = 0U; index < resource_health->producer_count; index++)
+    {
+        const struct p101_tool_event_producer_health *resource_producer;
+
+        resource_producer = &resource_health->producers[index];
+        if(resource_producer->pid == producer->pid && resource_producer->context_id == producer->context_id && strcmp(resource_producer->run_id, producer->run_id) == 0 && resource_producer->pending_exec != 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path)

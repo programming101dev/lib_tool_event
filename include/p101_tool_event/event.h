@@ -165,6 +165,7 @@ extern "C"
         size_t records_after_completion;
         int    write_failed;
         int    write_errno;
+        int    pending_exec;
     };
 
     struct p101_tool_event_stream_health
