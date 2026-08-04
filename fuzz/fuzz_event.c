@@ -1,6 +1,6 @@
+#include <p101_error/error.h>
 #include <p101_tool_event/event.h>
 #include <p101_tool_event/lifecycle.h>
-#include <p101_error/error.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,10 +10,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     char                         *line;
-    struct p101_tool_event_record      record;
-    p101_tool_event_parse_status       status;
-    struct p101_error            *err;
-    struct p101_tool_event_lifecycle_model  *model;
+    struct p101_tool_event_record record;
+    p101_tool_event_parse_status  status;
 
     if(size >= P101_TOOL_EVENT_LINE_MAX_BYTES)
     {
@@ -31,6 +29,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     status = p101_tool_event_parse_line(line, &record);
     if(status == P101_TOOL_EVENT_PARSE_OK && record.record_kind == P101_TOOL_EVENT_RECORD_RESOURCE)
     {
+        struct p101_error                      *err;
+        struct p101_tool_event_lifecycle_model *model;
+
         model = NULL;
         err   = p101_error_create(false);
         model = p101_tool_event_lifecycle_create(err);
