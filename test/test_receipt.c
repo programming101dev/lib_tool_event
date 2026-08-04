@@ -65,6 +65,7 @@ static void test_run_receipt_json(void)
     struct p101_error                 *err;
     struct p101_tool_event_fingerprint fingerprint;
     struct p101_tool_run_receipt       receipt;
+    struct p101_tool_run_receipt_validation validation;
     FILE                              *stream;
     char                               output[2048];
     size_t                             count;
@@ -81,6 +82,9 @@ static void test_run_receipt_json(void)
     receipt.tool_version      = "1";
     receipt.input_schema      = "test-v1";
     receipt.input_identity    = "file\"\\\b\f\n\r\t\x01name";
+    receipt.policy_schema     = "policy-v1";
+    receipt.policy_identity   = "sha256:policy";
+    receipt.run_identity      = "run-1";
     receipt.outcome           = P101_TOOL_OUTCOME_FINDINGS;
     receipt.failure_reason    = P101_TOOL_FAILURE_FINDINGS_PRESENT;
     receipt.failed_stage      = "analysis";
@@ -93,12 +97,70 @@ static void test_run_receipt_json(void)
     rewind(stream);
     count         = fread(output, 1U, sizeof(output) - 1U, stream);
     output[count] = '\0';
-    EXPECT(strstr(output, "\"schema\":\"p101-tool-run-receipt-v2\"") != NULL);
+    EXPECT(strstr(output, "\"schema\":\"p101-tool-run-receipt-v4\"") != NULL);
+    EXPECT(strstr(output, "\"policy\":{\"schema\":\"policy-v1\",\"identity\":\"sha256:policy\"}") != NULL);
+    EXPECT(strstr(output, "\"run_identity\":\"run-1\"") != NULL);
     EXPECT(strstr(output, "\"outcome\":\"findings\"") != NULL);
     EXPECT(strstr(output, "\"failure\":{\"reason\":\"findings-present\",\"stage\":\"analysis\",\"first_diagnostic\":\"P101-FD-001 descriptor remains open\"}") != NULL);
     EXPECT(strstr(output, "\"identity\":\"file\\\"\\\\\\b\\f\\n\\r\\t\\u0001name\"") != NULL);
     EXPECT(strstr(output, "\"value\":\"0000000000001234\"") != NULL);
+    EXPECT(strstr(output, "\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\"") != NULL);
     EXPECT(count > 0U && output[count - 1U] == '\n');
+    EXPECT(p101_tool_run_receipt_digest(&receipt, &fingerprint) != 0U);
+    EXPECT(p101_tool_run_receipt_validate_json(err, output, &validation) == 0);
+    EXPECT(validation.status == P101_TOOL_RECEIPT_VALID);
+    EXPECT(validation.outcome == P101_TOOL_OUTCOME_FINDINGS);
+    EXPECT(validation.failure_reason == P101_TOOL_FAILURE_FINDINGS_PRESENT);
+    EXPECT(validation.checks_attempted == 3U);
+    EXPECT(validation.checks_completed == 3U);
+    EXPECT(validation.fingerprint_present != 0);
+
+    {
+        char *identity = strstr(output, "file");
+
+        EXPECT(identity != NULL);
+        if(identity != NULL)
+        {
+            identity[0] = 'g';
+            EXPECT(p101_tool_run_receipt_validate_json(err, output, &validation) == 0);
+            EXPECT(validation.status == P101_TOOL_RECEIPT_BAD_DIGEST);
+            identity[0] = 'f';
+        }
+    }
+    {
+        char *version = strstr(output, "receipt-v4");
+
+        EXPECT(version != NULL);
+        if(version != NULL)
+        {
+            version[9] = '3';
+            EXPECT(p101_tool_run_receipt_validate_json(err, output, &validation) == 0);
+            EXPECT(validation.status == P101_TOOL_RECEIPT_BAD_VERSION);
+            version[9] = '4';
+        }
+    }
+    output[count - 2U] = '\0';
+    EXPECT(p101_tool_run_receipt_validate_json(err, output, &validation) == 0);
+    EXPECT(validation.status == P101_TOOL_RECEIPT_INVALID);
+    output[count - 2U] = '}';
+    {
+        char path[] = "/tmp/p101-tool-run-receipt-XXXXXX";
+        int  fd     = mkstemp(path);
+
+        EXPECT(fd >= 0);
+        if(fd >= 0)
+        {
+            EXPECT(write(fd, output, count) == (ssize_t)count);
+            EXPECT(close(fd) == 0);
+            EXPECT(p101_tool_run_receipt_validate_file(err, path, count, &validation) == 0);
+            EXPECT(validation.status == P101_TOOL_RECEIPT_VALID);
+            reset_error(&err);
+            EXPECT(p101_tool_run_receipt_validate_file(err, path, count - 1U, &validation) == -1);
+            EXPECT(p101_error_has_error(err));
+            reset_error(&err);
+            EXPECT(unlink(path) == 0);
+        }
+    }
 
     receipt.checks_completed = 4U;
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
@@ -126,6 +188,9 @@ static void test_run_receipt_failures(void)
     receipt.tool_version     = "1";
     receipt.input_schema     = "schema";
     receipt.input_identity   = "identity";
+    receipt.policy_schema    = "policy";
+    receipt.policy_identity  = "policy-identity";
+    receipt.run_identity     = "run";
     receipt.outcome          = P101_TOOL_OUTCOME_CLEAN;
     receipt.failure_reason   = P101_TOOL_FAILURE_NONE;
     receipt.failed_stage     = "";
@@ -155,6 +220,18 @@ static void test_run_receipt_failures(void)
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);
     receipt.input_identity = "identity";
+    receipt.policy_schema  = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.policy_schema   = "policy";
+    receipt.policy_identity = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.policy_identity = "policy-identity";
+    receipt.run_identity    = NULL;
+    EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
+    reset_error(&err);
+    receipt.run_identity  = "run";
     receipt.does_not_prove = NULL;
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);

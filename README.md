@@ -68,13 +68,18 @@ and an FNV-1a 64-bit fingerprint. That fingerprint is a reproducible change
 detector, not a cryptographic authenticity proof.
 
 `p101_tool_run_receipt_write_json()` supplies the shared machine-readable
-`p101-tool-run-receipt-v2` envelope. Tools retain ordinary Unix exit statuses,
+`p101-tool-run-receipt-v4` envelope. Tools retain ordinary Unix exit statuses,
 while receipts distinguish `clean`, `findings`, `refused`, `incomplete`,
 `unsupported`, and `tool-error`. Non-clean receipts also carry a typed failure
 reason, the stage that failed, and the first actionable diagnostic. A receipt
-binds the tool and input identities, executed-check counts, an optional input fingerprint, and a required
-`does_not_prove` limitation. It records a bounded observation; it is not an
-authenticity or completeness proof.
+binds the tool, admitted-input, policy, and run identities, executed-check
+counts, an optional input fingerprint, a required `does_not_prove` limitation,
+and a semantic receipt digest. `p101_tool_run_receipt_validate_file()` and the
+`p101-tool-receipt verify` command reject malformed, stale-version, and
+digest-mismatched receipts. `p101-tool-receipt require-clean` additionally
+rejects every valid non-clean outcome, which lets governed pipelines distinguish
+valid evidence from successful evidence. Both FNV digests are reproducible
+change detectors, not cryptographic authenticity proofs.
 
 The protocol sees only records emitted by p101 wrappers or user code using the
 observation API. Direct libc calls and third-party internals are outside its

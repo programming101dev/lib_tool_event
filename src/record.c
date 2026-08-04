@@ -63,12 +63,14 @@ static int test_fputs(const char *text, FILE *stream)
 
 char *p101_record_split(char **cursor)
 {
+    char *p101_single_result_;
     char *start;
     char *tab;
 
     if(cursor == NULL || *cursor == NULL)
     {
-        return NULL;
+        p101_single_result_ = NULL;
+        goto p101_single_exit_;
     }
 
     start = *cursor;
@@ -87,7 +89,11 @@ char *p101_record_split(char **cursor)
         *tab    = '\0';
         *cursor = tab + 1;
     }
-    return start;
+    p101_single_result_ = start;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 void p101_record_unescape_field(char *field)
@@ -136,12 +142,14 @@ void p101_record_unescape_field(char *field)
 
 int p101_record_parse_size(const char *text, size_t *out)
 {
+    int         p101_single_result_;
     const char *cursor;
     size_t      value;
 
     if(text == NULL || out == NULL || *text == '\0')
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
 
     cursor = text;
@@ -152,42 +160,57 @@ int p101_record_parse_size(const char *text, size_t *out)
 
         if(*cursor < '0' || *cursor > '9')
         {
-            return 0;
+            p101_single_result_ = 0;
+            goto p101_single_exit_;
         }
         digit = (size_t)(*cursor - '0');
         if(value > (SIZE_MAX - digit) / (size_t)NUMBER_BASE)
         {
-            return 0;
+            p101_single_result_ = 0;
+            goto p101_single_exit_;
         }
         value = (value * (size_t)NUMBER_BASE) + digit;
         cursor++;
     }
-    *out = value;
-    return 1;
+    *out                = value;
+    p101_single_result_ = 1;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_record_write_json_string(FILE *stream, const char *text)
 {
+    int p101_single_result_;
     if(stream == NULL || text == NULL)
     {
-        errno = EINVAL;
-        return -1;
+        errno               = EINVAL;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
     if(fputc('"', stream) == EOF || p101_record_write_json_string_contents(stream, text) != 0)
     {
-        return -1;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
-    return fputc('"', stream) == EOF ? -1 : 0;
+    p101_single_result_ = fputc('"', stream) == EOF ? -1 : 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_record_write_json_string_contents(FILE *stream, const char *text)
 {
+    int                  p101_single_result_;
     const unsigned char *cursor;
 
     if(stream == NULL || text == NULL)
     {
-        errno = EINVAL;
-        return -1;
+        errno               = EINVAL;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
     cursor = (const unsigned char *)text;
     while(*cursor != '\0')
@@ -197,43 +220,50 @@ int p101_record_write_json_string_contents(FILE *stream, const char *text)
             case '"':
                 if(fputs("\\\"", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\\':
                 if(fputs("\\\\", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\b':
                 if(fputs("\\b", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\f':
                 if(fputs("\\f", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\n':
                 if(fputs("\\n", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\r':
                 if(fputs("\\r", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             case '\t':
                 if(fputs("\\t", stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
             default:
@@ -241,16 +271,22 @@ int p101_record_write_json_string_contents(FILE *stream, const char *text)
                 {
                     if(fprintf(stream, "\\u%04x", (unsigned int)*cursor) < 0)
                     {
-                        return -1;
+                        p101_single_result_ = -1;
+                        goto p101_single_exit_;
                     }
                 }
                 else if(fputc((int)*cursor, stream) == EOF)
                 {
-                    return -1;
+                    p101_single_result_ = -1;
+                    goto p101_single_exit_;
                 }
                 break;
         }
         cursor++;
     }
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }

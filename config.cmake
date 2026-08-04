@@ -22,7 +22,7 @@ set(LINUX_STANDARD_FLAGS)
 set(BSD_STANDARD_FLAGS)
 
 set(LIBRARY_TARGETS p101_record p101_tool_event)
-set(EXECUTABLE_TARGETS p101_event_model)
+set(EXECUTABLE_TARGETS p101_event_model p101_receipt)
 
 set(p101_record_SOURCES
         src/record.c
@@ -63,6 +63,17 @@ set(p101_event_model_SOURCES
 set(p101_event_model_OUTPUT_NAME p101-event-model)
 
 set(p101_event_model_LINK_LIBRARIES
+        p101_tool_event
+        p101_error
+)
+
+set(p101_receipt_SOURCES
+        src/receipt_cli.c
+)
+
+set(p101_receipt_OUTPUT_NAME p101-tool-receipt)
+
+set(p101_receipt_LINK_LIBRARIES
         p101_tool_event
         p101_error
 )

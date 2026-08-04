@@ -38,28 +38,38 @@ extern void p101_tool_event_test_set_health_allocation_failure_errno(int errnum)
 
 int main(int argc, char *argv[])
 {
+    int                                  p101_single_result_;
     struct arguments                     args;
     struct p101_error                   *err;
     struct p101_tool_event_stream_health call_health;
     struct p101_tool_event_stream_health resource_health;
     struct p101_tool_model              *model;
+    int                                  parse_status;
     int                                  result;
 
     memset(&args, 0, sizeof(args));
     memset(&call_health, 0, sizeof(call_health));
     memset(&resource_health, 0, sizeof(resource_health));
-    model  = NULL;
-    result = EXIT_TROUBLE;
-    if(parse_arguments(argc, argv, &args) != 0)
+    model        = NULL;
+    result       = EXIT_TROUBLE;
+    parse_status = parse_arguments(argc, argv, &args);
+    if(parse_status > 0)
     {
-        return EXIT_TROUBLE;
+        p101_single_result_ = EXIT_SUCCESS;
+        goto p101_single_exit_;
+    }
+    if(parse_status < 0)
+    {
+        p101_single_result_ = EXIT_TROUBLE;
+        goto p101_single_exit_;
     }
 
     err = p101_error_create(false);
     if(err == NULL)    // GCOVR_EXCL_BR_LINE: lib_error has no injectable allocator; null remains a defensive process-start check.
     {
         (void)fputs("p101-event-model: could not create error object\n", stderr);    // GCOVR_EXCL_LINE
-        return EXIT_TROUBLE;                                                         // GCOVR_EXCL_LINE
+        p101_single_result_ = EXIT_TROUBLE;
+        goto p101_single_exit_;    // GCOVR_EXCL_LINE
     }
 #ifdef P101_TOOL_EVENT_TESTING
     if(getenv("P101_TOOL_EVENT_TEST_FAIL_MODEL_CREATE") != NULL)
@@ -105,7 +115,11 @@ done:
     p101_tool_event_stream_health_destroy(&call_health);
     p101_tool_model_destroy(&model);
     p101_error_destroy(err);
-    return result;
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void usage(FILE *stream, const char *program)
@@ -115,12 +129,14 @@ static void usage(FILE *stream, const char *program)
 
 static int parse_arguments(int argc, char *argv[], struct arguments *args)
 {
+    int p101_single_result_;
     int index;
 
     if(argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
     {
         usage(stdout, argv[0]);
-        exit(EXIT_SUCCESS);
+        p101_single_result_ = 1;
+        goto p101_single_exit_;
     }
     for(index = 1; index < argc; index++)
     {
@@ -142,26 +158,34 @@ static int parse_arguments(int argc, char *argv[], struct arguments *args)
         else
         {
             usage(stderr, argv[0]);
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
         index++;
         if(index >= argc || argv[index][0] == '\0' || *destination != NULL)
         {
             usage(stderr, argv[0]);
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
         *destination = argv[index];
     }
     if(args->resource_path == NULL || args->call_path == NULL)
     {
         usage(stderr, argv[0]);
-        return -1;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int ingest_path(struct p101_error *err, struct p101_tool_model *model, const char *path, bool calls, struct p101_tool_event_stream_health *health)
 {
+    int   p101_single_result_;
     FILE *stream;
     int   result;
 
@@ -169,7 +193,8 @@ static int ingest_path(struct p101_error *err, struct p101_tool_model *model, co
     if(stream == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
-        return -1;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
 #ifdef P101_TOOL_EVENT_TESTING
     if(getenv("P101_TOOL_EVENT_TEST_READ_ERROR") != NULL)
@@ -186,11 +211,16 @@ static int ingest_path(struct p101_error *err, struct p101_tool_model *model, co
         result = -1;
     }
     // GCOVR_EXCL_STOP
-    return result;
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, FILE *stream, bool calls, struct p101_tool_event_stream_health *health)
 {
+    int  p101_single_result_;
     char line[P101_TOOL_EVENT_LINE_MAX_BYTES];
 
     for(;;)
@@ -202,7 +232,8 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
         line_status = p101_tool_event_read_line(err, stream, line, sizeof(line));
         if(line_status == P101_TOOL_EVENT_LINE_EOF)
         {
-            return 0;
+            p101_single_result_ = 0;
+            goto p101_single_exit_;
         }
         if(line_status != P101_TOOL_EVENT_LINE_OK)
         {
@@ -210,7 +241,8 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
             {
                 P101_ERROR_RAISE_ERRNO(err, EINVAL);
             }
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
         parse_status = p101_tool_event_parse_line(line, &record);
         if(parse_status == P101_TOOL_EVENT_PARSE_OTHER)
@@ -220,7 +252,8 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
         if(parse_status != P101_TOOL_EVENT_PARSE_OK)
         {
             P101_ERROR_RAISE_ERRNO(err, EINVAL);
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
 #ifdef P101_TOOL_EVENT_TESTING
         if(getenv("P101_TOOL_EVENT_TEST_FAIL_HEALTH") != NULL)
@@ -235,7 +268,8 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
         if(p101_tool_event_stream_health_observe(health, &record) != 0)
         {
             P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
 #ifdef P101_TOOL_EVENT_TESTING
         if(getenv("P101_TOOL_EVENT_TEST_FAIL_INGEST") != NULL)
@@ -245,22 +279,33 @@ static int ingest_stream(struct p101_error *err, struct p101_tool_model *model, 
 #endif
         if(record.record_kind != P101_TOOL_EVENT_RECORD_COMPLETE && record_belongs_in_stream(&record, calls) != 0 && p101_tool_model_ingest(err, model, &record) != 0)
         {
-            return -1;
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
     }
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls)
 {
+    int p101_single_result_;
     if(calls)
     {
-        return record->record_kind == P101_TOOL_EVENT_RECORD_CALL;
+        p101_single_result_ = record->record_kind == P101_TOOL_EVENT_RECORD_CALL;
+        goto p101_single_exit_;
     }
-    return record->record_kind != P101_TOOL_EVENT_RECORD_CALL;
+    p101_single_result_ = record->record_kind != P101_TOOL_EVENT_RECORD_CALL;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int admitted_streams_are_complete(const struct p101_tool_event_stream_health *resource_health, const struct p101_tool_event_stream_health *call_health)
 {
+    int                                         p101_single_result_;
     const struct p101_tool_event_stream_health *streams[] = {resource_health, call_health};
 
     for(size_t stream = 0U; stream < sizeof(streams) / sizeof(streams[0]); stream++)
@@ -270,17 +315,23 @@ static int admitted_streams_are_complete(const struct p101_tool_event_stream_hea
         health = streams[stream];
         if(!stream_integrity_is_valid(health))
         {
-            return 0;
+            p101_single_result_ = 0;
+            goto p101_single_exit_;
         }
         for(size_t producer = 0U; producer < health->producer_count; producer++)
         {
             if(!producer_completed_or_execed(&health->producers[producer], resource_health))
             {
-                return 0;
+                p101_single_result_ = 0;
+                goto p101_single_exit_;
             }
         }
     }
-    return 1;
+    p101_single_result_ = 1;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int stream_integrity_is_valid(const struct p101_tool_event_stream_health *health)
@@ -291,13 +342,16 @@ static int stream_integrity_is_valid(const struct p101_tool_event_stream_health 
 
 static int producer_completed_or_execed(const struct p101_tool_event_producer_health *producer, const struct p101_tool_event_stream_health *resource_health)
 {
+    int p101_single_result_;
     if(producer->completion_records == 1U && producer->write_failed == 0 && producer->attempted_count_mismatches == 0U)
     {
-        return 1;
+        p101_single_result_ = 1;
+        goto p101_single_exit_;
     }
     if(producer->completion_records != 0U || resource_health == NULL)
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;    // GCOVR_EXCL_LINE -- validated streams cannot reach a second completion; the caller always supplies resource health.
     }
     for(size_t index = 0U; index < resource_health->producer_count; index++)
     {
@@ -306,14 +360,20 @@ static int producer_completed_or_execed(const struct p101_tool_event_producer_he
         resource_producer = &resource_health->producers[index];
         if(resource_producer->pid == producer->pid && resource_producer->context_id == producer->context_id && strcmp(resource_producer->run_id, producer->run_id) == 0 && resource_producer->pending_exec != 0)
         {
-            return 1;
+            p101_single_result_ = 1;
+            goto p101_single_exit_;
         }
     }
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path)
 {
+    int   p101_single_result_;
     FILE *stream;
     int   result;
 
@@ -321,7 +381,8 @@ static int write_model(struct p101_error *err, const struct p101_tool_model *mod
     if(stream == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
-        return -1;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
     result = p101_tool_model_write_json(err, stream, model);
     // GCOVR_EXCL_START: fclose failure for a successfully written regular file
@@ -332,5 +393,9 @@ static int write_model(struct p101_error *err, const struct p101_tool_model *mod
         result = -1;
     }
     // GCOVR_EXCL_STOP
-    return result;
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }

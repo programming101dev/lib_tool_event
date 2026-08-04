@@ -45,17 +45,24 @@ static bool is_hex_digit(char value)
 
 bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *value)
 {
-    char wanted[JSON_KEY_CAPACITY];
+    _Bool p101_single_result_;
+    char  wanted[JSON_KEY_CAPACITY];
 
     if(text == NULL || key == NULL || value == NULL || !key_text(key, wanted))
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
-    return find_top_level_size(text, wanted, value);
+    p101_single_result_ = (find_top_level_size(text, wanted, value));
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 bool p101_tool_event_parse_policy_summary_json(const char *text, const char *schema, struct p101_tool_event_policy_summary *summary)
 {
+    _Bool              p101_single_result_;
     struct json_cursor cursor;
     unsigned int       seen;
     bool               first;
@@ -70,7 +77,8 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
 
     if(text == NULL || schema == NULL || schema[0] == '\0' || summary == NULL)
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
 
     memset(summary, 0, sizeof(*summary));
@@ -81,7 +89,8 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
     skip_space(&cursor);
     if(*cursor.current++ != '{')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
 
     while(true)
@@ -98,19 +107,22 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
         {
             if(*cursor.current++ != ',')
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             skip_space(&cursor);
         }
         first = false;
         if(!parse_string(&cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
         if(*cursor.current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
 
@@ -120,7 +132,8 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
 
             if((seen & SEEN_SCHEMA) != 0U || !parse_string(&cursor, actual_schema, sizeof(actual_schema)))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_SCHEMA;
             schema_ok = strcmp(actual_schema, schema) == 0;
@@ -129,26 +142,34 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
         {
             if((seen & SEEN_SUMMARY) != 0U || !parse_policy_summary(&cursor, summary))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_SUMMARY;
         }
         else if(!skip_value(&cursor, 0U))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
     }
 
     skip_space(&cursor);
-    summary->parsed = (*cursor.current == '\0' && seen == SEEN_REQUIRED && schema_ok) != 0;
-    return summary->parsed;
+    summary->parsed     = (*cursor.current == '\0' && seen == SEEN_REQUIRED && schema_ok) != 0;
+    p101_single_result_ = (summary->parsed);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_tool_event_resource_summary *summary)
 {
+    _Bool              p101_single_result_;
     struct json_cursor cursor;
     unsigned int       seen;
     bool               first;
+    bool               result;
     bool               schema_ok;
 
     enum
@@ -170,7 +191,8 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
 
     if(text == NULL || summary == NULL)
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
 
     memset(summary, 0, sizeof(*summary));
@@ -181,7 +203,8 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
     skip_space(&cursor);
     if(*cursor.current++ != '{')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
 
     while(true)
@@ -198,19 +221,22 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
         {
             if(*cursor.current++ != ',')
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             skip_space(&cursor);
         }
         first = false;
         if(!parse_string(&cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
         if(*cursor.current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
 
@@ -219,7 +245,8 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
     {                                                                                                                                                                                                                                                              \
         if((seen & (bit)) != 0U || !parse_size(&cursor, &summary->member))                                                                                                                                                                                         \
         {                                                                                                                                                                                                                                                          \
-            return false;                                                                                                                                                                                                                                          \
+            result = false;                                                                                                                                                                                                                                        \
+            goto done;                                                                                                                                                                                                                                             \
         }                                                                                                                                                                                                                                                          \
         seen |= (bit);                                                                                                                                                                                                                                             \
     } while(0)
@@ -230,7 +257,8 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
 
             if((seen & SEEN_SCHEMA) != 0U || !parse_string(&cursor, schema, sizeof(schema)))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_SCHEMA;
             schema_ok = strcmp(schema, "p101-resource-policy-findings-v1") == 0;
@@ -279,27 +307,38 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
         {
             if((seen & SEEN_LOG_HEALTH) != 0U || !parse_log_health(&cursor, &summary->log_complete))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_LOG_HEALTH;
         }
         else if(!skip_value(&cursor, 0U))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
 #undef PARSE_UNIQUE_SIZE
     }
 
     skip_space(&cursor);
     summary->parsed = (*cursor.current == '\0' && seen == SEEN_REQUIRED && schema_ok) != 0;
-    return summary->parsed;
+    result          = summary->parsed;
+
+done:
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 size_t p101_tool_event_resource_summary_finding_count(const struct p101_tool_event_resource_summary *summary)
 {
+    size_t p101_single_result_;
     if(summary == NULL || !summary->parsed)
     {
-        return 0U;
+        p101_single_result_ = 0U;
+        goto p101_single_exit_;
     }
     {
         size_t count;
@@ -309,12 +348,17 @@ size_t p101_tool_event_resource_summary_finding_count(const struct p101_tool_eve
         {
             count++;
         }
-        return count;
+        p101_single_result_ = count;
+        goto p101_single_exit_;
     }
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary)
 {
+    _Bool        p101_single_result_;
     unsigned int seen;
     bool         first;
 
@@ -327,7 +371,8 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
 
     if(*cursor->current++ != '{')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     seen  = 0U;
     first = true;
@@ -346,19 +391,22 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
         {
             if(*cursor->current++ != ',')
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             skip_space(cursor);
         }
         first = false;
         if(!parse_string(cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(cursor);
         if(*cursor->current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(cursor);
 
@@ -366,7 +414,8 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
         {
             if((seen & SEEN_RECORDS) != 0U || !parse_size(cursor, &summary->records))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_RECORDS;
             summary->has_records = true;
@@ -375,17 +424,23 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
         {
             if((seen & SEEN_FINDINGS) != 0U || !parse_size(cursor, &summary->findings))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             seen |= SEEN_FINDINGS;
         }
         else if(!skip_value(cursor, 0U))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
     }
 
-    return (seen & SEEN_REQUIRED) == SEEN_REQUIRED;
+    p101_single_result_ = (_Bool)((seen & SEEN_REQUIRED) == SEEN_REQUIRED);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void skip_space(struct json_cursor *cursor)
@@ -398,11 +453,13 @@ static void skip_space(struct json_cursor *cursor)
 
 static bool parse_string(struct json_cursor *cursor, char *output, size_t output_size)
 {
+    _Bool  p101_single_result_;
     size_t used;
 
     if(*cursor->current++ != '"')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     used = 0U;
     while(*cursor->current != '\0' && *cursor->current != '"')
@@ -422,23 +479,27 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
                     digit = *cursor->current++;
                     if(!is_hex_digit(digit))
                     {
-                        return false;
+                        p101_single_result_ = (_Bool)(false);
+                        goto p101_single_exit_;
                     }
                 }
                 ch = '?';
             }
             else if(strchr("\"\\/bfnrt", (int)ch) == NULL)
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
         }
         else if(ch < JSON_CONTROL_LIMIT)
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         if(output != NULL && used + 1U >= output_size)
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         if(output != NULL)
         {
@@ -447,22 +508,29 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
     }
     if(*cursor->current++ != '"')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     if(output != NULL)
     {
         output[used] = '\0';
     }
-    return true;
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool parse_size(struct json_cursor *cursor, size_t *value)
 {
+    _Bool  p101_single_result_;
     size_t parsed;
 
     if(*cursor->current < '0' || *cursor->current > '9')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     parsed = 0U;
     while(*cursor->current >= '0' && *cursor->current <= '9')
@@ -472,70 +540,95 @@ static bool parse_size(struct json_cursor *cursor, size_t *value)
         digit = (size_t)(*cursor->current - '0');
         if(parsed > (SIZE_MAX - digit) / (size_t)NUMBER_BASE)
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         parsed = (parsed * (size_t)NUMBER_BASE) + digit;
         cursor->current++;
     }
-    *value = parsed;
-    return true;
+    *value              = parsed;
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool parse_boolean(struct json_cursor *cursor, bool *value)
 {
+    _Bool p101_single_result_;
     if(strncmp(cursor->current, "true", JSON_TRUE_LENGTH) == 0)
     {
         cursor->current += JSON_TRUE_LENGTH;
-        *value = true;
-        return true;
+        *value              = true;
+        p101_single_result_ = (_Bool)(true);
+        goto p101_single_exit_;
     }
     if(strncmp(cursor->current, "false", JSON_FALSE_LENGTH) == 0)
     {
         cursor->current += JSON_FALSE_LENGTH;
-        *value = false;
-        return true;
+        *value              = false;
+        p101_single_result_ = (_Bool)(true);
+        goto p101_single_exit_;
     }
-    return false;
+    p101_single_result_ = (_Bool)(false);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool skip_value(struct json_cursor *cursor, size_t depth)    // NOLINT(misc-no-recursion)
 {
+    _Bool p101_single_result_;
     if(depth >= JSON_MAX_DEPTH)
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     skip_space(cursor);
     if(*cursor->current == '"')
     {
-        return parse_string(cursor, NULL, 0U);
+        p101_single_result_ = (parse_string(cursor, NULL, 0U));
+        goto p101_single_exit_;
     }
     if(*cursor->current == '{')
     {
-        return skip_object(cursor, depth + 1U);
+        p101_single_result_ = (skip_object(cursor, depth + 1U));
+        goto p101_single_exit_;
     }
     if(*cursor->current == '[')
     {
-        return skip_array(cursor, depth + 1U);
+        p101_single_result_ = (skip_array(cursor, depth + 1U));
+        goto p101_single_exit_;
     }
     if((*cursor->current >= '0' && *cursor->current <= '9') || *cursor->current == '-')
     {
-        return skip_number(cursor);
+        p101_single_result_ = (skip_number(cursor));
+        goto p101_single_exit_;
     }
     if(strncmp(cursor->current, "true", JSON_TRUE_LENGTH) == 0 || strncmp(cursor->current, "null", JSON_TRUE_LENGTH) == 0)
     {
         cursor->current += JSON_TRUE_LENGTH;
-        return true;
+        p101_single_result_ = (_Bool)(true);
+        goto p101_single_exit_;
     }
     if(strncmp(cursor->current, "false", JSON_FALSE_LENGTH) == 0)
     {
         cursor->current += JSON_FALSE_LENGTH;
-        return true;
+        p101_single_result_ = (_Bool)(true);
+        goto p101_single_exit_;
     }
-    return false;
+    p101_single_result_ = (_Bool)(false);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool skip_number(struct json_cursor *cursor)
 {
+    _Bool       p101_single_result_;
     const char *current;
 
     current = cursor->current;
@@ -548,7 +641,8 @@ static bool skip_number(struct json_cursor *cursor)
         current++;
         if(is_decimal_digit(*current))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
     }
     else if(*current >= '1' && *current <= '9')
@@ -560,14 +654,16 @@ static bool skip_number(struct json_cursor *cursor)
     }
     else
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     if(*current == '.')
     {
         current++;
         if(*current < '0' || *current > '9')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         while(*current >= '0' && *current <= '9')
         {
@@ -583,83 +679,101 @@ static bool skip_number(struct json_cursor *cursor)
         }
         if(*current < '0' || *current > '9')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         while(*current >= '0' && *current <= '9')
         {
             current++;
         }
     }
-    cursor->current = current;
-    return true;
+    cursor->current     = current;
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool skip_object(struct json_cursor *cursor, size_t depth)    // NOLINT(misc-no-recursion)
 {
-    bool first;
+    _Bool p101_single_result_;
+    bool  first;
 
     cursor->current++;
     first = true;
-    while(true)
+    skip_space(cursor);
+    while(*cursor->current != '}')
     {
         char key[JSON_KEY_CAPACITY];
 
-        skip_space(cursor);
-        if(*cursor->current == '}')
-        {
-            cursor->current++;
-            return true;
-        }
         if(!first && *cursor->current++ != ',')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         first = false;
         skip_space(cursor);
         if(!parse_string(cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(cursor);
         if(*cursor->current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         if(!skip_value(cursor, depth))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
+        skip_space(cursor);
     }
+    cursor->current++;
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool skip_array(struct json_cursor *cursor, size_t depth)    // NOLINT(misc-no-recursion)
 {
-    bool first;
+    _Bool p101_single_result_;
+    bool  first;
 
     cursor->current++;
     first = true;
-    while(true)
+    skip_space(cursor);
+    while(*cursor->current != ']')
     {
-        skip_space(cursor);
-        if(*cursor->current == ']')
-        {
-            cursor->current++;
-            return true;
-        }
         if(!first && *cursor->current++ != ',')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         first = false;
         if(!skip_value(cursor, depth))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
+        skip_space(cursor);
     }
+    cursor->current++;
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool key_text(const char *key, char output[JSON_KEY_CAPACITY])
 {
+    _Bool  p101_single_result_;
     size_t length;
 
     length = strlen(key);
@@ -670,15 +784,21 @@ static bool key_text(const char *key, char output[JSON_KEY_CAPACITY])
     }
     if(length == 0U || length >= JSON_KEY_CAPACITY)
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     memcpy(output, key, length);
-    output[length] = '\0';
-    return true;
+    output[length]      = '\0';
+    p101_single_result_ = (_Bool)(true);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool find_top_level_size(const char *text, const char *wanted, size_t *value)
 {
+    _Bool              p101_single_result_;
     struct json_cursor cursor;
     bool               first;
     bool               found;
@@ -689,7 +809,8 @@ static bool find_top_level_size(const char *text, const char *wanted, size_t *va
     skip_space(&cursor);
     if(*cursor.current++ != '{')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     while(true)
     {
@@ -703,45 +824,56 @@ static bool find_top_level_size(const char *text, const char *wanted, size_t *va
         }
         if(!first && *cursor.current++ != ',')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         first = false;
         skip_space(&cursor);
         if(!parse_string(&cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
         if(*cursor.current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(&cursor);
         if(strcmp(key, wanted) == 0)
         {
             if(found || !parse_size(&cursor, value))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             found = true;
         }
         else if(!skip_value(&cursor, 0U))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
     }
     skip_space(&cursor);
-    return (found && *cursor.current == '\0') != 0;
+    p101_single_result_ = (_Bool)((found && *cursor.current == '\0') != 0);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static bool parse_log_health(struct json_cursor *cursor, bool *complete)
 {
-    bool first;
-    bool found;
+    _Bool p101_single_result_;
+    bool  first;
+    bool  found;
 
     if(*cursor->current++ != '{')
     {
-        return false;
+        p101_single_result_ = (_Bool)(false);
+        goto p101_single_exit_;
     }
     first = true;
     found = false;
@@ -753,35 +885,44 @@ static bool parse_log_health(struct json_cursor *cursor, bool *complete)
         if(*cursor->current == '}')
         {
             cursor->current++;
-            return found;
+            p101_single_result_ = found;
+            goto p101_single_exit_;
         }
         if(!first && *cursor->current++ != ',')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         first = false;
         skip_space(cursor);
         if(!parse_string(cursor, key, sizeof(key)))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(cursor);
         if(*cursor->current++ != ':')
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
         skip_space(cursor);
         if(strcmp(key, "complete") == 0)
         {
             if(found || !parse_boolean(cursor, complete))
             {
-                return false;
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
             }
             found = true;
         }
         else if(!skip_value(cursor, 1U))
         {
-            return false;
+            p101_single_result_ = (_Bool)(false);
+            goto p101_single_exit_;
         }
     }
+
+p101_single_exit_:
+    return p101_single_result_;
 }

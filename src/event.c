@@ -104,9 +104,10 @@ void p101_tool_event_test_force_format_overflow(void)
 
 p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FILE *stream, char *line, size_t line_size)
 {
-    bool   saw_byte;
-    bool   malformed;
-    size_t length;
+    p101_tool_event_line_status p101_single_result_;
+    bool                        saw_byte;
+    bool                        malformed;
+    size_t                      length;
 
     if(line != NULL && line_size > 0U)
     {
@@ -116,7 +117,8 @@ p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FI
     if(stream == NULL || line == NULL || line_size == 0U)
     {
         P101_ERROR_RAISE_CHECK(err);
-        return P101_TOOL_EVENT_LINE_ERROR;
+        p101_single_result_ = P101_TOOL_EVENT_LINE_ERROR;
+        goto p101_single_exit_;
     }
 
     saw_byte  = false;
@@ -141,7 +143,8 @@ p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FI
                 }
 #endif
                 P101_ERROR_RAISE_ERRNO(err, errno == 0 ? EIO : errno);
-                return P101_TOOL_EVENT_LINE_ERROR;
+                p101_single_result_ = P101_TOOL_EVENT_LINE_ERROR;
+                goto p101_single_exit_;
             }
             break;
         }
@@ -169,19 +172,26 @@ p101_tool_event_line_status p101_tool_event_read_line(struct p101_error *err, FI
 
     if(!saw_byte)
     {
-        return P101_TOOL_EVENT_LINE_EOF;
+        p101_single_result_ = P101_TOOL_EVENT_LINE_EOF;
+        goto p101_single_exit_;
     }
 
     line[length] = '\0';
     if(malformed)
     {
-        return P101_TOOL_EVENT_LINE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_LINE_MALFORMED;
+        goto p101_single_exit_;
     }
-    return P101_TOOL_EVENT_LINE_OK;
+    p101_single_result_ = P101_TOOL_EVENT_LINE_OK;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_tool_event_record *record)
 {
+    p101_tool_event_parse_status p101_single_result_;
     char                        *cursor;
     char                        *fields[MAX_FIELDS];
     const char                  *magic;
@@ -192,12 +202,14 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
 
     if(line == NULL || record == NULL)
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
 
     if(!p101_tool_event_line_is_ours(line))
     {
-        return P101_TOOL_EVENT_PARSE_OTHER;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_OTHER;
+        goto p101_single_exit_;
     }
 
     memset(record, 0, sizeof(*record));
@@ -220,13 +232,15 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
     }
     if(cursor != NULL)
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
 
     status = parse_metadata(fields, count, record, &payload);
     if(status != P101_TOOL_EVENT_PARSE_OK)
     {
-        return status;
+        p101_single_result_ = status;
+        goto p101_single_exit_;
     }
 
     status = parse_payload(magic, fields, count, payload, record);
@@ -234,11 +248,16 @@ p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_
     {
         unescape_record(record);
     }
-    return status;
+    p101_single_result_ = status;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *record)
 {
+    int                 p101_single_result_;
     struct line_builder builder;
     const char         *magic;
     int                 actual_error;
@@ -247,8 +266,9 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
 
     if(stream == NULL || record == NULL || !output_is_valid(record))
     {
-        errno = EINVAL;
-        return -1;
+        errno               = EINVAL;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
 
     /*
@@ -265,8 +285,9 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
     append_char(&builder, '\n');
     if(builder.failed != 0)
     {
-        errno = EMSGSIZE;
-        return -1;
+        errno               = EMSGSIZE;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
 
     saved_error  = errno;
@@ -287,44 +308,58 @@ int p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *rec
         actual_error = errno == 0 ? EIO : errno;
     }
     funlockfile(stream);
-    errno = result == 0 ? saved_error : actual_error;
-    return result;
+    errno               = result == 0 ? saved_error : actual_error;
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_tool_event_line_is_ours(const char *line)
 {
+    int                      p101_single_result_;
     static const char *const prefixes[] = {"P101FD\t", "P101ALLOC\t", "P101FORK\t", "P101SPAWN\t", "P101EXEC\t", "P101EXECFAIL\t", "P101CALL\t", "P101RESOURCE\t", "P101COMPLETE\t"};
 
     if(line == NULL)
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
 
     for(size_t i = 0U; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
     {
         if(strncmp(line, prefixes[i], strlen(prefixes[i])) == 0)
         {
-            return 1;
+            p101_single_result_ = 1;
+            goto p101_single_exit_;
         }
     }
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *health, const struct p101_tool_event_record *record)
 {
+    int                                     p101_single_result_;
     struct p101_tool_event_producer_health *producer;
 
     if(health == NULL || record == NULL)
     {
-        errno = EINVAL;
-        return -1;
+        errno               = EINVAL;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
 
     if(record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
     {
         health->invalid_run_ids++;
-        errno = EINVAL;
-        return -1;
+        errno               = EINVAL;
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
     }
     if(health->distinct_run_ids == 0U)
     {
@@ -341,7 +376,8 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
     if(producer == NULL)
     {
         health->allocation_failed = 1;
-        return -1;
+        p101_single_result_       = -1;
+        goto p101_single_exit_;
     }
 
     health->records_observed++;
@@ -375,7 +411,8 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
     }
     if(record->record_kind != P101_TOOL_EVENT_RECORD_COMPLETE)
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
 
     health->completion_records++;
@@ -392,7 +429,11 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
         producer->write_failed   = 1;
         producer->write_errno    = record->write_errno;
     }
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health)
@@ -403,11 +444,13 @@ int p101_tool_event_stream_health_is_complete(const struct p101_tool_event_strea
 
 size_t p101_tool_event_stream_health_incomplete_producers(const struct p101_tool_event_stream_health *health)
 {
+    size_t p101_single_result_;
     size_t incomplete;
 
     if(health == NULL)
     {
-        return 0U;
+        p101_single_result_ = 0U;
+        goto p101_single_exit_;
     }
 
     incomplete = 0U;
@@ -421,7 +464,11 @@ size_t p101_tool_event_stream_health_incomplete_producers(const struct p101_tool
             incomplete++;
         }
     }
-    return incomplete;
+    p101_single_result_ = incomplete;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 void p101_tool_event_stream_health_destroy(struct p101_tool_event_stream_health *health)
@@ -437,11 +484,13 @@ void p101_tool_event_stream_health_destroy(struct p101_tool_event_stream_health 
 
 static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, const char *run_id, long pid, size_t context_id)
 {
+    struct p101_tool_event_producer_health *p101_single_result_;
     for(size_t index = 0U; index < health->producer_count; index++)
     {
         if(strcmp(health->producers[index].run_id, run_id) == 0 && health->producers[index].pid == pid && health->producers[index].context_id == context_id)
         {
-            return &health->producers[index];
+            p101_single_result_ = &health->producers[index];
+            goto p101_single_exit_;
         }
     }
 
@@ -466,7 +515,8 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
         }
         if(grown == NULL)
         {
-            return NULL;
+            p101_single_result_ = NULL;
+            goto p101_single_exit_;
         }
         health->producers         = grown;
         health->producer_capacity = capacity;
@@ -477,11 +527,16 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
     health->producers[health->producer_count].pid        = pid;
     health->producers[health->producer_count].context_id = context_id;
     health->producer_count++;
-    return &health->producers[health->producer_count - 1U];
+    p101_single_result_ = &health->producers[health->producer_count - 1U];
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 const char *p101_tool_event_parse_status_name(p101_tool_event_parse_status status)
 {
+    const char *p101_single_result_;
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
@@ -489,114 +544,152 @@ const char *p101_tool_event_parse_status_name(p101_tool_event_parse_status statu
     switch(status)
     {
         case P101_TOOL_EVENT_PARSE_OTHER:
-            return "not a p101 event record";
+            p101_single_result_ = "not a p101 event record";
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_PARSE_OK:
-            return "ok";
+            p101_single_result_ = "ok";
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_PARSE_MALFORMED:
-            return "malformed record";
+            p101_single_result_ = "malformed record";
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_PARSE_BAD_VERSION:
-            return "unsupported record version";
+            p101_single_result_ = "unsupported record version";
+            goto p101_single_exit_;
         default:
-            return "unknown event parse status";
+            p101_single_result_ = "unknown event parse status";
+            goto p101_single_exit_;
     }
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int parse_long_field(const char *text, long min, long max, long *out)
 {
+    int   p101_single_result_;
     char *end;
     long  value;
 
     if(*text == '\0')
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
 
     errno = 0;
     value = strtol(text, &end, NUMBER_BASE);
     if(end == text || *end != '\0')
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
     if(errno != 0)
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
     if(value < min || value > max)
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
-    *out = value;
-    return 1;
+    *out                = value;
+    p101_single_result_ = 1;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int parse_optional_size_field(const char *text, size_t *out, int *available)
 {
+    int p101_single_result_;
     *out       = 0U;
     *available = 0;
     if(strcmp(text, "-") == 0)
     {
-        return 1;
+        p101_single_result_ = 1;
+        goto p101_single_exit_;
     }
     if(!p101_record_parse_size(text, out))
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
-    *available = 1;
-    return 1;
+    *available          = 1;
+    p101_single_result_ = 1;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload)
 {
-    long version;
+    p101_tool_event_parse_status p101_single_result_;
+    long                         version;
     if(field_count < METADATA_FIELDS || !parse_long_field(fields[0], 0, LONG_MAX, &version))
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
 
     if(version != P101_TOOL_EVENT_LOG_VERSION)
     {
-        return P101_TOOL_EVENT_PARSE_BAD_VERSION;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_BAD_VERSION;
+        goto p101_single_exit_;
     }
     record->version = (int)version;
     record->run_id  = fields[RUN_ID_INDEX];
     if(record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
     if(!parse_long_field(fields[PID_INDEX], 0, LONG_MAX, &record->pid))
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
 
     if(!p101_record_parse_size(fields[CONTEXT_INDEX], &record->context_id))
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
     *payload = METADATA_FIELDS;
     if(!p101_record_parse_size(fields[SEQUENCE_INDEX], &record->sequence) || !parse_optional_size_field(fields[MONOTONIC_INDEX], &record->monotonic_ns, &record->monotonic_ns_available) ||
        !parse_optional_size_field(fields[WALL_INDEX], &record->wall_unix_ns, &record->wall_unix_ns_available))
     {
-        return P101_TOOL_EVENT_PARSE_MALFORMED;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+        goto p101_single_exit_;
     }
-    return P101_TOOL_EVENT_PARSE_OK;
+    p101_single_result_ = P101_TOOL_EVENT_PARSE_OK;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void append_char(struct line_builder *builder, char value)
 {
     if(builder->failed != 0)
     {
-        return;
+        goto p101_single_exit_;
     }
     if(builder->length >= P101_TOOL_EVENT_LINE_MAX_BYTES)
     {
         builder->failed = 1;
-        return;
+        goto p101_single_exit_;
     }
     builder->data[builder->length++] = value;
     builder->data[builder->length]   = '\0';
+
+p101_single_exit_:
+    return;
 }
 
 static void append_text(struct line_builder *builder, const char *text)
@@ -615,7 +708,7 @@ static void append_format(struct line_builder *builder, const char *format, ...)
 
     if(builder->failed != 0)
     {
-        return;
+        goto p101_single_exit_;
     }
     available = sizeof(builder->data) - builder->length;
     va_start(arguments, format);
@@ -631,9 +724,12 @@ static void append_format(struct line_builder *builder, const char *format, ...)
     if((size_t)written >= available)
     {
         builder->failed = 1;
-        return;
+        goto p101_single_exit_;
     }
     builder->length += (size_t)written;
+
+p101_single_exit_:
+    return;
 }
 
 static void write_metadata(struct line_builder *builder, const struct p101_tool_event_output *record)
@@ -758,12 +854,12 @@ static void append_field(struct line_builder *builder, const char *text)
     if(text == NULL)
     {
         append_char(builder, '-');
-        return;
+        goto p101_single_exit_;
     }
     if(text[0] == '-' && text[1] == '\0')
     {
         append_text(builder, "\\-");
-        return;
+        goto p101_single_exit_;
     }
 
     while(*text != '\0')
@@ -799,17 +895,22 @@ static void append_field(struct line_builder *builder, const char *text)
             append_char(builder, (char)((ch < ' ' || ch == ASCII_DELETE) ? '?' : ch));
         }
     }
+
+p101_single_exit_:
+    return;
 }
 
 static int output_is_valid(const struct p101_tool_event_output *record)
 {
+    int p101_single_result_;
     int version;
 
     version = record->version == 0 ? P101_TOOL_EVENT_LOG_VERSION : record->version;
     if(version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES || record->pid < 0 ||
        (record->monotonic_ns_available != 0 && record->monotonic_ns_available != 1) || (record->wall_unix_ns_available != 0 && record->wall_unix_ns_available != 1))
     {
-        return 0;
+        p101_single_result_ = 0;
+        goto p101_single_exit_;
     }
 #ifdef __clang__
     #pragma clang diagnostic push
@@ -818,30 +919,42 @@ static int output_is_valid(const struct p101_tool_event_output *record)
     switch(record->record_kind)
     {
         case P101_TOOL_EVENT_RECORD_FD:
-            return record->fd >= 0 && record->fd <= EVENT_FD_MAX && record->line_number >= 0 && (record->fd_kind == P101_TOOL_EVENT_FD_OPEN || record->fd_kind == P101_TOOL_EVENT_FD_CLOSE);
+            p101_single_result_ = record->fd >= 0 && record->fd <= EVENT_FD_MAX && record->line_number >= 0 && (record->fd_kind == P101_TOOL_EVENT_FD_OPEN || record->fd_kind == P101_TOOL_EVENT_FD_CLOSE);
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_ALLOC:
-            return record->line_number >= 0 && (record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE || record->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC);
+            p101_single_result_ = record->line_number >= 0 && (record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE || record->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC);
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_CALL:
-            return record->line_number >= 0 && (record->call_kind == P101_TOOL_EVENT_CALL_ENTER || record->call_kind == P101_TOOL_EVENT_CALL_EXIT);
+            p101_single_result_ = record->line_number >= 0 && (record->call_kind == P101_TOOL_EVENT_CALL_ENTER || record->call_kind == P101_TOOL_EVENT_CALL_EXIT);
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_RESOURCE:
-            return record->line_number >= 0 && (record->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE ||
-                                                record->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER);
+            p101_single_result_ = (record->line_number >= 0 && (record->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || record->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE ||
+                                                                record->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER));
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_FORK:
         case P101_TOOL_EVENT_RECORD_SPAWN:
-            return record->child_pid >= 0 && record->line_number >= 0;
+            p101_single_result_ = record->child_pid >= 0 && record->line_number >= 0;
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_EXEC:
-            return record->fd >= 0 && record->fd <= EVENT_FD_MAX && (record->cloexec == 0 || record->cloexec == 1) && record->line_number >= 0;
+            p101_single_result_ = record->fd >= 0 && record->fd <= EVENT_FD_MAX && (record->cloexec == 0 || record->cloexec == 1) && record->line_number >= 0;
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_EXEC_FAIL:
-            return record->line_number >= 0;
+            p101_single_result_ = record->line_number >= 0;
+            goto p101_single_exit_;
         case P101_TOOL_EVENT_RECORD_COMPLETE:
-            return (record->write_failed == 0 || record->write_failed == 1) && ((record->write_failed == 0 && record->write_errno == 0) || (record->write_failed == 1 && record->write_errno > 0));
+            p101_single_result_ = (record->write_failed == 0 || record->write_failed == 1) && ((record->write_failed == 0 && record->write_errno == 0) || (record->write_failed == 1 && record->write_errno > 0));
+            goto p101_single_exit_;
         default:
             break;
     }
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
-    return 0;
+    p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static const char *record_magic(p101_tool_event_record_kind kind)
@@ -886,13 +999,15 @@ static const char *resource_kind_name(p101_tool_event_resource_kind kind)
 
 static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record)
 {
-    long value;
+    p101_tool_event_parse_status p101_single_result_;
+    long                         value;
 
     if(strcmp(magic, "P101FD") == 0)
     {
         if(count != payload + FD_PAYLOAD_FIELDS)
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(strcmp(fields[payload], "OPEN") == 0)
         {
@@ -904,29 +1019,34 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         }
         else
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(!parse_long_field(fields[payload + 1U], 0, EVENT_FD_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->fd = (int)value;
         if(!parse_long_field(fields[payload + 2U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + 3U];
         record->file_name     = fields[payload + 4U];
         record->record_kind   = P101_TOOL_EVENT_RECORD_FD;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101ALLOC") == 0)
     {
         if(count != payload + ALLOC_PAYLOAD_FIELDS)
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(strcmp(fields[payload], "ALLOC") == 0)
         {
@@ -942,19 +1062,22 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         }
         else
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->ptr     = fields[payload + 1U];
         record->new_ptr = strcmp(fields[payload + 2U], "-") == 0 ? NULL : fields[payload + 2U];
         if(!p101_record_parse_size(fields[payload + 3U], &record->size) || !parse_long_field(fields[payload + 4U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + ALLOC_FUNCTION_INDEX];
         record->file_name     = fields[payload + ALLOC_FILE_INDEX];
         record->record_kind   = P101_TOOL_EVENT_RECORD_ALLOC;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101FORK") == 0 || strcmp(magic, "P101SPAWN") == 0)
@@ -964,59 +1087,68 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         expected = strcmp(magic, "P101FORK") == 0 ? FORK_PAYLOAD_FIELDS : SPAWN_PAYLOAD_FIELDS;
         if(count != payload + expected || !parse_long_field(fields[payload], 0, LONG_MAX, &record->child_pid) || !parse_long_field(fields[payload + 1U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + 2U];
         record->file_name     = fields[payload + 3U];
         record->target        = expected == SPAWN_PAYLOAD_FIELDS ? fields[payload + 4U] : NULL;
         record->record_kind   = expected == FORK_PAYLOAD_FIELDS ? P101_TOOL_EVENT_RECORD_FORK : P101_TOOL_EVENT_RECORD_SPAWN;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101EXEC") == 0)
     {
         if(count != payload + EXEC_PAYLOAD_FIELDS || !parse_long_field(fields[payload], 0, EVENT_FD_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->fd = (int)value;
         if(!parse_long_field(fields[payload + 1U], 0, 1, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->cloexec = (int)value;
         if(!parse_long_field(fields[payload + 2U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + 3U];
         record->file_name     = fields[payload + 4U];
         record->target        = fields[payload + EXEC_TARGET_INDEX];
         record->record_kind   = P101_TOOL_EVENT_RECORD_EXEC;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101EXECFAIL") == 0)
     {
         if(count != payload + EXEC_FAIL_PAYLOAD_FIELDS || !parse_long_field(fields[payload], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + 1U];
         record->file_name     = fields[payload + 2U];
         record->target        = fields[payload + 3U];
         record->record_kind   = P101_TOOL_EVENT_RECORD_EXEC_FAIL;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101CALL") == 0)
     {
         if(count != payload + CALL_PAYLOAD_FIELDS)
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(strcmp(fields[payload], "ENTER") == 0)
         {
@@ -1028,11 +1160,13 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         }
         else
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(!parse_long_field(fields[payload + 1U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->line_number   = (int)value;
         record->function_name = fields[payload + 2U];
@@ -1041,14 +1175,16 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         record->result        = fields[payload + CALL_RESULT_INDEX];
         record->file_name     = fields[payload + CALL_FILE_INDEX];
         record->record_kind   = P101_TOOL_EVENT_RECORD_CALL;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101RESOURCE") == 0)
     {
         if(count != payload + RESOURCE_PAYLOAD_FIELDS)
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         if(strcmp(fields[payload], "ACQUIRE") == 0)
         {
@@ -1068,44 +1204,55 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         }
         else
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->resource_class = fields[payload + 1U];
         record->resource_id    = fields[payload + 2U];
         record->related_id     = strcmp(fields[payload + 3U], "-") == 0 ? NULL : fields[payload + 3U];
         if(!p101_record_parse_size(fields[payload + 4U], &record->size) || !parse_long_field(fields[payload + RESOURCE_LINE_INDEX], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->metadata      = fields[payload + RESOURCE_METADATA_INDEX];
         record->line_number   = (int)value;
         record->function_name = fields[payload + RESOURCE_FUNCTION_INDEX];
         record->file_name     = fields[payload + RESOURCE_FILE_INDEX];
         record->record_kind   = P101_TOOL_EVENT_RECORD_RESOURCE;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_   = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
     if(strcmp(magic, "P101COMPLETE") == 0)
     {
         if(count != payload + COMPLETE_PAYLOAD_FIELDS || !p101_record_parse_size(fields[payload], &record->events_attempted) || !parse_long_field(fields[payload + 1U], 0, 1, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->write_failed = (int)value;
         if(!parse_long_field(fields[payload + 2U], 0, INT_MAX, &value))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->write_errno = (int)value;
         if((record->write_failed == 0 && record->write_errno != 0) || (record->write_failed != 0 && record->write_errno == 0))
         {
-            return P101_TOOL_EVENT_PARSE_MALFORMED;
+            p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
+            goto p101_single_exit_;
         }
         record->record_kind = P101_TOOL_EVENT_RECORD_COMPLETE;
-        return P101_TOOL_EVENT_PARSE_OK;
+        p101_single_result_ = P101_TOOL_EVENT_PARSE_OK;
+        goto p101_single_exit_;
     }
 
-    return P101_TOOL_EVENT_PARSE_OTHER;
+    p101_single_result_ = P101_TOOL_EVENT_PARSE_OTHER;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void unescape_record(struct p101_tool_event_record *record)

@@ -68,6 +68,11 @@ if "$tool" -r "$work/incomplete-resources.log" -c "$calls" >/dev/null 2>&1; then
     echo "incomplete resource stream was accepted" >&2
     exit 1
 fi
+: >"$work/empty-resources.log"
+if "$tool" -r "$work/empty-resources.log" -c "$calls" >/dev/null 2>&1; then
+    echo "empty resource stream was accepted" >&2
+    exit 1
+fi
 printf 'P101EXEC\t5\texec-run\t42\t1\t1\t100\t200\t3\t0\t9\tp101_execvp\tfile.c\t/bin/true\n' >"$work/exec-resources.log"
 printf 'P101CALL\t5\texec-run\t42\t1\t1\t100\t200\tENTER\t9\tp101_execvp\tp101_execvp\t-\t-\tfile.c\n' >"$work/exec-calls.log"
 "$tool" -r "$work/exec-resources.log" -c "$work/exec-calls.log" >/dev/null

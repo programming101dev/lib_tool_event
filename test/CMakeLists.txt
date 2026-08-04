@@ -107,3 +107,23 @@ add_test(NAME test_p101_event_model_cli
                 "$<TARGET_FILE:p101_event_model_cli_under_test>"
                 "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/model-resources.log"
                 "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/model-calls.log")
+
+add_executable(p101_receipt_cli_under_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/receipt_cli.c")
+target_link_libraries(p101_receipt_cli_under_test PRIVATE
+        p101_tool_event_under_test
+        p101_error_under_test)
+target_compile_options(p101_receipt_cli_under_test PRIVATE ${_COV})
+target_link_options(p101_receipt_cli_under_test PRIVATE ${_COV})
+
+add_executable(p101_receipt_fixture receipt_fixture.c)
+target_link_libraries(p101_receipt_fixture PRIVATE
+        p101_tool_event_under_test
+        p101_error_under_test)
+target_compile_options(p101_receipt_fixture PRIVATE ${_COV})
+target_link_options(p101_receipt_fixture PRIVATE ${_COV})
+
+add_test(NAME test_p101_receipt_cli
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/test_receipt_cli.sh"
+                "$<TARGET_FILE:p101_receipt_cli_under_test>"
+                "$<TARGET_FILE:p101_receipt_fixture>")

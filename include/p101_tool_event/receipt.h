@@ -52,6 +52,9 @@ extern "C"
         const char              *tool_version;
         const char              *input_schema;
         const char              *input_identity;
+        const char              *policy_schema;
+        const char              *policy_identity;
+        const char              *run_identity;
         p101_tool_outcome        outcome;
         p101_tool_failure_reason failure_reason;
         const char              *failed_stage;
@@ -59,6 +62,25 @@ extern "C"
         size_t                   checks_attempted;
         size_t                   checks_completed;
         const char              *does_not_prove;
+    };
+
+    typedef enum
+    {
+        P101_TOOL_RECEIPT_VALID = 0,
+        P101_TOOL_RECEIPT_INVALID,
+        P101_TOOL_RECEIPT_BAD_VERSION,
+        P101_TOOL_RECEIPT_BAD_DIGEST
+    } p101_tool_receipt_validation_status;
+
+    struct p101_tool_run_receipt_validation
+    {
+        p101_tool_receipt_validation_status status;
+        p101_tool_outcome                   outcome;
+        p101_tool_failure_reason            failure_reason;
+        size_t                              checks_attempted;
+        size_t                              checks_completed;
+        int                                 fingerprint_present;
+        uint64_t                            receipt_digest;
     };
 
     /*
@@ -71,8 +93,12 @@ extern "C"
     int         p101_tool_event_fingerprint_file(struct p101_error *err, const char *path, size_t maximum_bytes, size_t maximum_records, struct p101_tool_event_fingerprint *fingerprint);
     const char *p101_tool_outcome_name(p101_tool_outcome outcome);
     const char *p101_tool_failure_reason_name(p101_tool_failure_reason reason);
+    const char *p101_tool_receipt_validation_status_name(p101_tool_receipt_validation_status status);
     int         p101_tool_outcome_exit_status(p101_tool_outcome outcome);
+    uint64_t    p101_tool_run_receipt_digest(const struct p101_tool_run_receipt *receipt, const struct p101_tool_event_fingerprint *fingerprint);
     int         p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const struct p101_tool_run_receipt *receipt, const struct p101_tool_event_fingerprint *fingerprint);
+    int         p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text, struct p101_tool_run_receipt_validation *validation);
+    int         p101_tool_run_receipt_validate_file(struct p101_error *err, const char *path, size_t maximum_bytes, struct p101_tool_run_receipt_validation *validation);
 
 #ifdef __cplusplus
 }
