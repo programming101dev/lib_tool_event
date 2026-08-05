@@ -33,7 +33,7 @@ static void test_invalid_and_allocation_failure(void)
     EXPECT(health.invalid_run_ids == 2U);
     memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
     overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
-    record.run_id = overlong_run_id;
+    record.run_id                                 = overlong_run_id;
     EXPECT(p101_tool_event_stream_health_observe(&health, &record) == -1);
     EXPECT(health.invalid_run_ids == 3U);
     EXPECT(!p101_tool_event_stream_health_is_complete(&health));

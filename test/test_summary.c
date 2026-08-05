@@ -63,11 +63,10 @@ static void test_valid_summary_and_count(void)
 
 static void test_valid_policy_summary(void)
 {
-    const char *text =
-        "{\"schema\":\"p101-resource-policy-findings-v1\","
-        "\"findings\":[{\"id\":\"P101-FD-001\"}],"
-        "\"summary\":{\"records\":7,\"processes\":1,\"findings\":1,"
-        "\"process_metrics\":[]}}";
+    const char                           *text = "{\"schema\":\"p101-resource-policy-findings-v1\","
+                                                 "\"findings\":[{\"id\":\"P101-FD-001\"}],"
+                                                 "\"summary\":{\"records\":7,\"processes\":1,\"findings\":1,"
+                                                 "\"process_metrics\":[]}}";
     struct p101_tool_event_policy_summary summary;
 
     EXPECT(p101_tool_event_parse_policy_summary_json(text, "p101-resource-policy-findings-v1", &summary));
@@ -308,6 +307,25 @@ static void test_depth_limit(void)
     EXPECT(!p101_tool_event_parse_resource_summary_json(text, &summary));
 }
 
+static void test_length_bounded_parsers_reject_embedded_nul(void)
+{
+    static const char                       policy_json[] = "{\"schema\":\"p101-analysis-findings-v1\",\"summary\":{\"findings\":1}}";
+    char                                    embedded[sizeof(policy_json) + 4U];
+    struct p101_tool_event_policy_summary   policy_summary;
+    struct p101_tool_event_resource_summary resource_summary;
+    size_t                                  value;
+
+    memcpy(embedded, policy_json, sizeof(policy_json));
+    embedded[8] = '\0';
+    memcpy(embedded + sizeof(policy_json), "junk", 4U);
+
+    EXPECT(!p101_tool_event_parse_policy_summary_json_n(embedded, sizeof(embedded), "p101-analysis-findings-v1", &policy_summary));
+    EXPECT(!p101_tool_event_parse_resource_summary_json_n(embedded, sizeof(embedded), &resource_summary));
+    EXPECT(!p101_tool_event_parse_json_size_n(embedded, sizeof(embedded), "findings", &value));
+    EXPECT(p101_tool_event_parse_policy_summary_json_n(policy_json, sizeof(policy_json) - 1U, "p101-analysis-findings-v1", &policy_summary));
+    EXPECT(!p101_tool_event_parse_policy_summary_json_n("{\"E6+\\", 6U, "p101-analysis-findings-v1", &policy_summary));
+}
+
 int main(void)
 {
     test_valid_summary_and_count();
@@ -317,5 +335,6 @@ int main(void)
     test_summary_structure_failures();
     test_unknown_json_values();
     test_depth_limit();
+    test_length_bounded_parsers_reject_embedded_nul();
     return failures == 0 ? 0 : 1;
 }

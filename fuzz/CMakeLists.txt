@@ -16,6 +16,7 @@ add_executable(fuzz
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/record.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/event.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/lifecycle.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/summary.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/src/error.c"
 )
 target_include_directories(fuzz PRIVATE

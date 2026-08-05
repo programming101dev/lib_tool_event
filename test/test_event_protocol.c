@@ -431,7 +431,7 @@ static void test_invalid_writer_records(void)
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
     overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
-    output.run_id = overlong_run_id;
+    output.run_id                                 = overlong_run_id;
     expect_invalid_output(&output);
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     output.pid = -1;

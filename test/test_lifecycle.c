@@ -70,7 +70,7 @@ static void test_public_boundaries(void)
     p101_error_reset(err);
     memset(overlong_run_id, 'r', sizeof(overlong_run_id) - 1U);
     overlong_run_id[sizeof(overlong_run_id) - 1U] = '\0';
-    record.run_id = overlong_run_id;
+    record.run_id                                 = overlong_run_id;
     EXPECT(p101_tool_event_lifecycle_ingest(err, model, &record) == -1);
     p101_error_reset(err);
     record.run_id      = "lifecycle-test";

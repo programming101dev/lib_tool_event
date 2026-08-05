@@ -73,6 +73,12 @@ src/summary.c:find_top_level_size:strcmp
 src/summary.c:is_hex_digit:strchr
 src/summary.c:key_text:memcpy
 src/summary.c:key_text:strlen
+src/summary.c:copy_json_text:malloc
+src/summary.c:copy_json_text:memchr
+src/summary.c:copy_json_text:memcpy
+src/summary.c:p101_tool_event_parse_json_size_n:free
+src/summary.c:p101_tool_event_parse_policy_summary_json_n:free
+src/summary.c:p101_tool_event_parse_resource_summary_json_n:free
 src/summary.c:*:memset
 src/summary.c:p101_tool_event_parse_policy_summary_json:strcmp
 src/summary.c:p101_tool_event_parse_resource_summary_json:strcmp

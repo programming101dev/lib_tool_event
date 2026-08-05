@@ -62,13 +62,13 @@ static void test_tool_outcomes(void)
 
 static void test_run_receipt_json(void)
 {
-    struct p101_error                 *err;
-    struct p101_tool_event_fingerprint fingerprint;
-    struct p101_tool_run_receipt       receipt;
+    struct p101_error                      *err;
+    struct p101_tool_event_fingerprint      fingerprint;
+    struct p101_tool_run_receipt            receipt;
     struct p101_tool_run_receipt_validation validation;
-    FILE                              *stream;
-    char                               output[2048];
-    size_t                             count;
+    FILE                                   *stream;
+    char                                    output[2048];
+    size_t                                  count;
 
     err    = p101_error_create(false);
     stream = tmpfile();
@@ -231,7 +231,7 @@ static void test_run_receipt_failures(void)
     receipt.run_identity    = NULL;
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);
-    receipt.run_identity  = "run";
+    receipt.run_identity   = "run";
     receipt.does_not_prove = NULL;
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);
@@ -269,7 +269,7 @@ static void test_run_receipt_failures(void)
     receipt.failure_reason   = P101_TOOL_FAILURE_NONE;
     receipt.failed_stage     = "";
     receipt.first_diagnostic = "";
-    receipt.failed_stage   = NULL;
+    receipt.failed_stage     = NULL;
     EXPECT(p101_tool_run_receipt_write_json(err, stream, &receipt, NULL) == -1);
     reset_error(&err);
     receipt.failed_stage     = "";

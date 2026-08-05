@@ -4,10 +4,10 @@
 
 int main(int argc, char *argv[])
 {
-    struct p101_error            *err;
-    struct p101_tool_run_receipt  receipt;
-    FILE                         *stream;
-    int                           result;
+    struct p101_error           *err;
+    struct p101_tool_run_receipt receipt;
+    FILE                        *stream;
+    int                          result;
 
     if(argc < 2 || argc > 3)
     {
@@ -25,20 +25,20 @@ int main(int argc, char *argv[])
         return 2;
     }
     receipt = (struct p101_tool_run_receipt){
-        .tool_name         = "fixture",
-        .tool_version      = "1",
-        .input_schema      = "fixture-input-v1",
-        .input_identity    = "fixture-input",
-        .policy_schema     = "fixture-policy-v1",
-        .policy_identity   = "fixture-policy",
-        .run_identity      = "fixture-run",
-        .outcome           = P101_TOOL_OUTCOME_CLEAN,
-        .failure_reason    = P101_TOOL_FAILURE_NONE,
-        .failed_stage      = "",
-        .first_diagnostic  = "",
-        .checks_attempted  = 1U,
-        .checks_completed  = 1U,
-        .does_not_prove    = "The fixture proves only receipt transport.",
+        .tool_name        = "fixture",
+        .tool_version     = "1",
+        .input_schema     = "fixture-input-v1",
+        .input_identity   = "fixture-input",
+        .policy_schema    = "fixture-policy-v1",
+        .policy_identity  = "fixture-policy",
+        .run_identity     = "fixture-run",
+        .outcome          = P101_TOOL_OUTCOME_CLEAN,
+        .failure_reason   = P101_TOOL_FAILURE_NONE,
+        .failed_stage     = "",
+        .first_diagnostic = "",
+        .checks_attempted = 1U,
+        .checks_completed = 1U,
+        .does_not_prove   = "The fixture proves only receipt transport.",
     };
     if(argc == 3)
     {

@@ -34,8 +34,11 @@ extern "C"
     };
 
     bool   p101_tool_event_parse_policy_summary_json(const char *text, const char *schema, struct p101_tool_event_policy_summary *summary);
+    bool   p101_tool_event_parse_policy_summary_json_n(const char *text, size_t text_size, const char *schema, struct p101_tool_event_policy_summary *summary);
     bool   p101_tool_event_parse_resource_summary_json(const char *text, struct p101_tool_event_resource_summary *summary);
+    bool   p101_tool_event_parse_resource_summary_json_n(const char *text, size_t text_size, struct p101_tool_event_resource_summary *summary);
     bool   p101_tool_event_parse_json_size(const char *text, const char *key, size_t *value);
+    bool   p101_tool_event_parse_json_size_n(const char *text, size_t text_size, const char *key, size_t *value);
     size_t p101_tool_event_resource_summary_finding_count(const struct p101_tool_event_resource_summary *summary);
 
 #ifdef __cplusplus

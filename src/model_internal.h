@@ -24,15 +24,15 @@ struct p101_tool_model_owned_node
 
 struct p101_tool_model
 {
-    char                              *run_id;
-    struct p101_tool_model_owned_node *nodes;
-    size_t                             node_count;
-    size_t                             node_capacity;
-    struct p101_tool_model_edge       *edges;
-    size_t                             edge_count;
-    size_t                             edge_capacity;
+    char                                   *run_id;
+    struct p101_tool_model_owned_node      *nodes;
+    size_t                                  node_count;
+    size_t                                  node_capacity;
+    struct p101_tool_model_edge            *edges;
+    size_t                                  edge_count;
+    size_t                                  edge_capacity;
     struct p101_tool_event_lifecycle_model *lifecycle;
-    int                                finished;
+    int                                     finished;
 };
 
 #endif

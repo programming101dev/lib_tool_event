@@ -1,5 +1,6 @@
 #include <p101_tool_event/summary.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum
@@ -18,20 +19,21 @@ struct json_cursor
     const char *current;
 };
 
-static void skip_space(struct json_cursor *cursor);
-static bool parse_string(struct json_cursor *cursor, char *output, size_t output_size);
-static bool parse_size(struct json_cursor *cursor, size_t *value);
-static bool parse_boolean(struct json_cursor *cursor, bool *value);
-static bool skip_number(struct json_cursor *cursor);
-static bool skip_value(struct json_cursor *cursor, size_t depth);
-static bool skip_object(struct json_cursor *cursor, size_t depth);
-static bool skip_array(struct json_cursor *cursor, size_t depth);
-static bool key_text(const char *key, char output[JSON_KEY_CAPACITY]);
-static bool find_top_level_size(const char *text, const char *wanted, size_t *value);
-static bool parse_log_health(struct json_cursor *cursor, bool *complete);
-static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary);
-static bool is_decimal_digit(char value);
-static bool is_hex_digit(char value);
+static void  skip_space(struct json_cursor *cursor);
+static bool  parse_string(struct json_cursor *cursor, char *output, size_t output_size);
+static bool  parse_size(struct json_cursor *cursor, size_t *value);
+static bool  parse_boolean(struct json_cursor *cursor, bool *value);
+static bool  skip_number(struct json_cursor *cursor);
+static bool  skip_value(struct json_cursor *cursor, size_t depth);
+static bool  skip_object(struct json_cursor *cursor, size_t depth);
+static bool  skip_array(struct json_cursor *cursor, size_t depth);
+static bool  key_text(const char *key, char output[JSON_KEY_CAPACITY]);
+static bool  find_top_level_size(const char *text, const char *wanted, size_t *value);
+static bool  parse_log_health(struct json_cursor *cursor, bool *complete);
+static bool  parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary);
+static bool  is_decimal_digit(char value);
+static bool  is_hex_digit(char value);
+static char *copy_json_text(const char *text, size_t text_size);
 
 static bool is_decimal_digit(char value)
 {
@@ -41,6 +43,42 @@ static bool is_decimal_digit(char value)
 static bool is_hex_digit(char value)
 {
     return (is_decimal_digit(value) || (strchr("abcdefABCDEF", (int)value) != NULL && value != '\0')) != 0;
+}
+
+static char *copy_json_text(const char *text, size_t text_size)
+{
+    char *copy;
+
+    copy = NULL;
+    if(text == NULL || text_size == SIZE_MAX || memchr(text, '\0', text_size) != NULL)
+    {
+        goto p101_single_exit_;
+    }
+    copy = (char *)malloc(text_size + 1U);
+    if(copy == NULL)
+    {
+        goto p101_single_exit_;
+    }
+    memcpy(copy, text, text_size);
+    copy[text_size] = '\0';
+
+p101_single_exit_:
+    return copy;
+}
+
+bool p101_tool_event_parse_json_size_n(const char *text, size_t text_size, const char *key, size_t *value)
+{
+    char *copy;
+    bool  result;
+
+    result = false;
+    copy   = copy_json_text(text, text_size);
+    if(copy != NULL)
+    {
+        result = p101_tool_event_parse_json_size(copy, key, value);
+    }
+    free(copy);
+    return result;
 }
 
 bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *value)
@@ -58,6 +96,21 @@ bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *
 
 p101_single_exit_:
     return p101_single_result_;
+}
+
+bool p101_tool_event_parse_policy_summary_json_n(const char *text, size_t text_size, const char *schema, struct p101_tool_event_policy_summary *summary)
+{
+    char *copy;
+    bool  result;
+
+    result = false;
+    copy   = copy_json_text(text, text_size);
+    if(copy != NULL)
+    {
+        result = p101_tool_event_parse_policy_summary_json(copy, schema, summary);
+    }
+    free(copy);
+    return result;
 }
 
 bool p101_tool_event_parse_policy_summary_json(const char *text, const char *schema, struct p101_tool_event_policy_summary *summary)
@@ -161,6 +214,21 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
 
 p101_single_exit_:
     return p101_single_result_;
+}
+
+bool p101_tool_event_parse_resource_summary_json_n(const char *text, size_t text_size, struct p101_tool_event_resource_summary *summary)
+{
+    char *copy;
+    bool  result;
+
+    result = false;
+    copy   = copy_json_text(text, text_size);
+    if(copy != NULL)
+    {
+        result = p101_tool_event_parse_resource_summary_json(copy, summary);
+    }
+    free(copy);
+    return result;
 }
 
 bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_tool_event_resource_summary *summary)
@@ -470,6 +538,11 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
         if(ch == '\\')
         {
             ch = (unsigned char)*cursor->current++;
+            if(ch == '\0')
+            {
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
+            }
             if(ch == 'u')
             {
                 for(size_t index = 0U; index < 4U; index++)
