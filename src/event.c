@@ -395,7 +395,7 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
     }
     if(health->distinct_run_ids == 0U)
     {
-        (void)snprintf(health->run_id, sizeof(health->run_id), "%s", record->run_id);
+        memcpy(health->run_id, record->run_id, run_id_length + 1U);
         health->distinct_run_ids = 1U;
     }
     else
@@ -585,6 +585,7 @@ p101_single_exit_:
 static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_tool_event_stream_health *health, const char *run_id, long pid, size_t context_id)
 {
     struct p101_tool_event_producer_health *p101_single_result_;
+    size_t                                  run_id_length;
     for(size_t index = 0U; index < health->producer_count; index++)
     {
         int run_id_comparison;
@@ -628,7 +629,8 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
     }
 
     memset(&health->producers[health->producer_count], 0, sizeof(*health->producers));
-    (void)snprintf(health->producers[health->producer_count].run_id, sizeof(health->producers[health->producer_count].run_id), "%s", run_id);
+    run_id_length = strlen(run_id);
+    memcpy(health->producers[health->producer_count].run_id, run_id, run_id_length + 1U);
     health->producers[health->producer_count].pid        = pid;
     health->producers[health->producer_count].context_id = context_id;
     health->producer_count++;

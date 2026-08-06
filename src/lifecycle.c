@@ -121,14 +121,21 @@ p101_single_exit_:
 
 static int format_fd_identifier(char *identifier, size_t size, int fd)
 {
+    int p101_single_result_;
+
 #ifdef P101_TOOL_EVENT_TESTING
     if(force_format_failure != 0)
     {
         force_format_failure = 0;
-        return -1;
+        p101_single_result_  = -1;
+        goto p101_single_exit_;
     }
 #endif
-    return snprintf(identifier, size, "%d", fd);
+    p101_single_result_ = snprintf(identifier, size, "%d", fd);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 struct p101_tool_event_lifecycle_model *p101_tool_event_lifecycle_create(struct p101_error *err)
