@@ -477,10 +477,62 @@ int p101_tool_event_stream_health_is_complete(const struct p101_tool_event_strea
     int    p101_single_result_;
     size_t incomplete_producers;
 
+    p101_single_result_ = 0;
+    if(health == NULL)
+    {
+        goto p101_single_exit_;
+    }
+
     incomplete_producers = p101_tool_event_stream_health_incomplete_producers(health);
-    p101_single_result_  = health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U &&
-                           health->attempted_count_mismatches == 0U && health->records_after_completion == 0U && health->distinct_run_ids == 1U && health->invalid_run_ids == 0U && health->mixed_run_ids == 0 && health->allocation_failed == 0 &&
-                           incomplete_producers == 0U;
+    if(health->records_observed == 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->producer_count == 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->producer_write_failures != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->duplicate_sequences != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->nonmonotonic_sequences != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->attempted_count_mismatches != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->records_after_completion != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->distinct_run_ids != 1U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->invalid_run_ids != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->mixed_run_ids != 0)
+    {
+        goto p101_single_exit_;
+    }
+    if(health->allocation_failed != 0)
+    {
+        goto p101_single_exit_;
+    }
+    if(incomplete_producers != 0U)
+    {
+        goto p101_single_exit_;
+    }
+    p101_single_result_ = 1;
     goto p101_single_exit_;
 
 p101_single_exit_:
