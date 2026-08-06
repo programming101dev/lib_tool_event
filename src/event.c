@@ -395,7 +395,10 @@ int p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *
     }
     if(health->distinct_run_ids == 0U)
     {
-        memcpy(health->run_id, record->run_id, run_id_length + 1U);
+        for(size_t index = 0U; index <= run_id_length; index++)
+        {
+            health->run_id[index] = record->run_id[index];
+        }
         health->distinct_run_ids = 1U;
     }
     else
@@ -630,7 +633,10 @@ static struct p101_tool_event_producer_health *find_or_add_producer(struct p101_
 
     memset(&health->producers[health->producer_count], 0, sizeof(*health->producers));
     run_id_length = strlen(run_id);
-    memcpy(health->producers[health->producer_count].run_id, run_id, run_id_length + 1U);
+    for(size_t index = 0U; index <= run_id_length; index++)
+    {
+        health->producers[health->producer_count].run_id[index] = run_id[index];
+    }
     health->producers[health->producer_count].pid        = pid;
     health->producers[health->producer_count].context_id = context_id;
     health->producer_count++;

@@ -18,10 +18,6 @@ src/event.c		c:@F@strlen
 src/event.c		c:@F@strncmp
 src/event.c		c:@F@strtol
 src/event.c		c:@F@write
-# These copies occur after the run ID length has been validated. This protocol
-# library cannot call p101_snprintf because that wrapper depends on lib_env,
-# which in turn emits records through lib_tool_event.
-src/event.c		c:@F@snprintf
 src/lifecycle.c		c:@F@free
 src/lifecycle.c		c:@F@malloc
 src/lifecycle.c		c:@F@memcpy
