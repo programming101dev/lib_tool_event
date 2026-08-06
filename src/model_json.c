@@ -94,6 +94,7 @@ static const char *resource_operation_name(p101_tool_event_resource_kind kind);
 int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struct p101_tool_model *model)
 {
     int    p101_single_result_;
+    int    operation_status;
     size_t calls;
     size_t resources;
 
@@ -116,23 +117,61 @@ int p101_tool_model_write_json(struct p101_error *err, FILE *stream, const struc
             resources++;
         }
     }
-    if(fprintf(stream,
-               "{\n"
-               "  \"schema\": \"p101-run-model-v1\",\n"
-               "  \"event_schema\": \"%s\",\n"
-               "  \"identity_policy\": \"run-pid-context-event-sequence-kind\",\n"
-               "  \"ordering\": \"causal-edges-with-per-context-sequence-and-observed-timestamps\",\n"
-               "  \"summary\": {\"call_nodes\": %zu, \"resource_nodes\": %zu},\n",
-               P101_TOOL_EVENT_SCHEMA_NAME,
-               calls,
-               resources) < 0 ||
-       write_nodes(stream, model) != 0 || fputs(",\n", stream) == EOF || write_edges(stream, model) != 0 || fputs(",\n", stream) == EOF || write_lifecycle(stream, model) != 0 || fputs("\n}\n", stream) == EOF || fflush(stream) != 0)
+    operation_status = fprintf(stream,
+                               "{\n"
+                               "  \"schema\": \"p101-run-model-v1\",\n"
+                               "  \"event_schema\": \"%s\",\n"
+                               "  \"identity_policy\": \"run-pid-context-event-sequence-kind\",\n"
+                               "  \"ordering\": \"causal-edges-with-per-context-sequence-and-observed-timestamps\",\n"
+                               "  \"summary\": {\"call_nodes\": %zu, \"resource_nodes\": %zu},\n",
+                               P101_TOOL_EVENT_SCHEMA_NAME,
+                               calls,
+                               resources);
+    if(operation_status < 0)
     {
-        P101_ERROR_RAISE_ERRNO(err, EIO);
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        goto write_failed;
+    }
+    operation_status = write_nodes(stream, model);
+    if(operation_status != 0)
+    {
+        goto write_failed;
+    }
+    operation_status = fputs(",\n", stream);
+    if(operation_status == EOF)
+    {
+        goto write_failed;
+    }
+    operation_status = write_edges(stream, model);
+    if(operation_status != 0)
+    {
+        goto write_failed;
+    }
+    operation_status = fputs(",\n", stream);
+    if(operation_status == EOF)
+    {
+        goto write_failed;
+    }
+    operation_status = write_lifecycle(stream, model);
+    if(operation_status != 0)
+    {
+        goto write_failed;
+    }
+    operation_status = fputs("\n}\n", stream);
+    if(operation_status == EOF)
+    {
+        goto write_failed;
+    }
+    operation_status = fflush(stream);
+    if(operation_status != 0)
+    {
+        goto write_failed;
     }
     p101_single_result_ = 0;
+    goto p101_single_exit_;
+
+write_failed:
+    P101_ERROR_RAISE_ERRNO(err, EIO);
+    p101_single_result_ = -1;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -142,12 +181,14 @@ p101_single_exit_:
 static int write_lifecycle(FILE *stream, const struct p101_tool_model *model)
 {
     int    p101_single_result_;
+    int    operation_status;
     size_t entry_count;
     size_t finding_count;
 
-    entry_count   = p101_tool_event_lifecycle_entry_count(model->lifecycle);
-    finding_count = p101_tool_event_lifecycle_finding_count(model->lifecycle);
-    if(fputs("  \"lifecycle\": {\n    \"entries\": [\n", stream) == EOF)
+    entry_count      = p101_tool_event_lifecycle_entry_count(model->lifecycle);
+    finding_count    = p101_tool_event_lifecycle_finding_count(model->lifecycle);
+    operation_status = fputs("  \"lifecycle\": {\n    \"entries\": [\n", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -165,13 +206,24 @@ static int write_lifecycle(FILE *stream, const struct p101_tool_model *model)
             goto p101_single_exit_;
         }
         // GCOVR_EXCL_STOP
-        if((index > 0U && fputs(",\n", stream) == EOF) || write_lifecycle_entry(stream, entry) != 0)
+        if(index > 0U)
+        {
+            operation_status = fputs(",\n", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+        }
+        operation_status = write_lifecycle_entry(stream, entry);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    if(fputs("\n    ],\n    \"findings\": [\n", stream) == EOF)
+    operation_status = fputs("\n    ],\n    \"findings\": [\n", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -189,13 +241,24 @@ static int write_lifecycle(FILE *stream, const struct p101_tool_model *model)
             goto p101_single_exit_;
         }
         // GCOVR_EXCL_STOP
-        if((index > 0U && fputs(",\n", stream) == EOF) || write_lifecycle_finding(stream, finding) != 0)
+        if(index > 0U)
+        {
+            operation_status = fputs(",\n", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+        }
+        operation_status = write_lifecycle_finding(stream, finding);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    p101_single_result_ = fputs("\n    ]\n  }", stream) == EOF ? -1 : 0;
+    operation_status    = fputs("\n    ]\n  }", stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -205,6 +268,7 @@ p101_single_exit_:
 static int write_lifecycle_entry(FILE *stream, const struct p101_tool_event_lifecycle_entry *entry)
 {
     int         p101_single_result_;
+    int         operation_status;
     const char *live_text;
 
     live_text = "false";
@@ -212,29 +276,76 @@ static int write_lifecycle_entry(FILE *stream, const struct p101_tool_event_life
     {
         live_text = "true";
     }
-    if(fputs("      {\"pid\":", stream) == EOF || fprintf(stream, "%ld,\"resource_class\":", entry->pid) < 0 || write_json_string(stream, entry->resource_class) != 0 || fputs(",\"identity\":", stream) == EOF ||
-       write_json_string(stream, entry->resource_id) != 0 || fprintf(stream, ",\"size\":%zu,\"live\":%s,\"acquired\":", entry->size, live_text) < 0 ||
-       write_lifecycle_location(stream, entry->acquired_context_id, entry->acquired_sequence, entry->acquired_monotonic_ns, entry->acquired_monotonic_ns_available, entry->acquired_file_name, entry->acquired_line_number, entry->acquired_function_name) != 0 ||
-       fputs(",\"released\":", stream) == EOF)
+    operation_status = fputs("      {\"pid\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, "%ld,\"resource_class\":", entry->pid);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, entry->resource_class);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"identity\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, entry->resource_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, ",\"size\":%zu,\"live\":%s,\"acquired\":", entry->size, live_text);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status =
+        write_lifecycle_location(stream, entry->acquired_context_id, entry->acquired_sequence, entry->acquired_monotonic_ns, entry->acquired_monotonic_ns_available, entry->acquired_file_name, entry->acquired_line_number, entry->acquired_function_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"released\":", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(entry->live)
     {
-        if(fputs("null", stream) == EOF)
+        operation_status = fputs("null", stream);
+        if(operation_status == EOF)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    else if(write_lifecycle_location(stream, entry->released_context_id, entry->released_sequence, entry->released_monotonic_ns, entry->released_monotonic_ns_available, entry->released_file_name, entry->released_line_number, entry->released_function_name) !=
-            0)
+    else
     {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        operation_status =
+            write_lifecycle_location(stream, entry->released_context_id, entry->released_sequence, entry->released_monotonic_ns, entry->released_monotonic_ns_available, entry->released_file_name, entry->released_line_number, entry->released_function_name);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
-    p101_single_result_ = fputc('}', stream) == EOF ? -1 : 0;
+    operation_status    = fputc('}', stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -243,28 +354,85 @@ p101_single_exit_:
 
 static int write_lifecycle_finding(FILE *stream, const struct p101_tool_event_lifecycle_finding *finding)
 {
-    int p101_single_result_;
-    if(fputs("      {\"kind\":", stream) == EOF || write_json_string(stream, lifecycle_finding_kind_name(finding->kind)) != 0 || fprintf(stream, ",\"pid\":%ld,\"resource_class\":", finding->pid) < 0 || write_json_string(stream, finding->resource_class) != 0 ||
-       fputs(",\"identity\":", stream) == EOF || write_json_string(stream, finding->resource_id) != 0 || fputs(",\"at\":", stream) == EOF ||
-       write_lifecycle_location(stream, finding->context_id, finding->sequence, finding->monotonic_ns, finding->monotonic_ns_available, finding->file_name, finding->line_number, finding->function_name) != 0 || fputs(",\"previous\":", stream) == EOF)
+    int         p101_single_result_;
+    int         operation_status;
+    const char *kind_name;
+
+    operation_status = fputs("      {\"kind\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    kind_name        = lifecycle_finding_kind_name(finding->kind);
+    operation_status = write_json_string(stream, kind_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, ",\"pid\":%ld,\"resource_class\":", finding->pid);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, finding->resource_class);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"identity\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, finding->resource_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"at\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_lifecycle_location(stream, finding->context_id, finding->sequence, finding->monotonic_ns, finding->monotonic_ns_available, finding->file_name, finding->line_number, finding->function_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"previous\":", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(finding->previous_sequence == 0U)
     {
-        if(fputs("null", stream) == EOF)
+        operation_status = fputs("null", stream);
+        if(operation_status == EOF)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    else if(write_lifecycle_location(stream, finding->previous_context_id, finding->previous_sequence, 0U, false, finding->previous_file_name, finding->previous_line_number, finding->previous_function_name) != 0)
+    else
     {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        operation_status = write_lifecycle_location(stream, finding->previous_context_id, finding->previous_sequence, 0U, false, finding->previous_file_name, finding->previous_line_number, finding->previous_function_name);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
-    p101_single_result_ = fputc('}', stream) == EOF ? -1 : 0;
+    operation_status    = fputc('}', stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -274,30 +442,62 @@ p101_single_exit_:
 static int write_lifecycle_location(FILE *stream, size_t context, size_t sequence, size_t monotonic_ns, bool monotonic_available, const char *file_name, int line_number, const char *function_name)
 {
     int p101_single_result_;
-    if(fprintf(stream, "{\"context\":%zu,\"sequence\":%zu,\"monotonic_ns\":", context, sequence) < 0)
+    int operation_status;
+
+    operation_status = fprintf(stream, "{\"context\":%zu,\"sequence\":%zu,\"monotonic_ns\":", context, sequence);
+    if(operation_status < 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(monotonic_available)
     {
-        if(fprintf(stream, "%zu", monotonic_ns) < 0)
+        operation_status = fprintf(stream, "%zu", monotonic_ns);
+        if(operation_status < 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    else if(fputs("null", stream) == EOF)
+    else
     {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        operation_status = fputs("null", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
     /*
      * Lifecycle construction normalizes missing source text to "?"; locations
      * therefore never receive null names.
      */
-    p101_single_result_ =
-        (fputs(",\"source\":{\"file\":", stream) == EOF || write_json_string(stream, file_name) != 0 || fprintf(stream, ",\"line\":%d,\"function\":", line_number) < 0 || write_json_string(stream, function_name) != 0 || fputs("}}", stream) == EOF ? -1 : 0);
+    operation_status = fputs(",\"source\":{\"file\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, file_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, ",\"line\":%d,\"function\":", line_number);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, function_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status    = fputs("}}", stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -474,10 +674,32 @@ p101_single_exit_:
 static int write_node_id(FILE *stream, const struct p101_tool_model_node *node)
 {
     int         p101_single_result_;
+    int         operation_status;
     const char *domain;
+    const char *kind_name;
 
-    domain = node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource";
-    if(fputc('"', stream) == EOF || fprintf(stream, "%s:", domain) < 0 || write_json_string_contents(stream, node->run_id) != 0 || fprintf(stream, ":%ld:%zu:%zu:%s\"", node->pid, node->context_id, node->sequence, node_kind_name(node)) < 0)
+    domain           = node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource";
+    operation_status = fputc('"', stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, "%s:", domain);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string_contents(stream, node->run_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    kind_name        = node_kind_name(node);
+    operation_status = fprintf(stream, ":%ld:%zu:%zu:%s\"", node->pid, node->context_id, node->sequence, kind_name);
+    if(operation_status < 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -492,20 +714,34 @@ p101_single_exit_:
 static int write_nodes(FILE *stream, const struct p101_tool_model *model)
 {
     int p101_single_result_;
-    if(fputs("  \"nodes\": [\n", stream) == EOF)
+    int operation_status;
+
+    operation_status = fputs("  \"nodes\": [\n", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     for(size_t index = 0U; index < model->node_count; index++)
     {
-        if((index > 0U && fputs(",\n", stream) == EOF) || write_node(stream, &model->nodes[index].value) != 0)
+        if(index > 0U)
+        {
+            operation_status = fputs(",\n", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+        }
+        operation_status = write_node(stream, &model->nodes[index].value);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    p101_single_result_ = fputs("\n  ]", stream) == EOF ? -1 : 0;
+    operation_status    = fputs("\n  ]", stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -514,28 +750,129 @@ p101_single_exit_:
 
 static int write_node(FILE *stream, const struct p101_tool_model_node *node)
 {
-    int p101_single_result_;
-    if(fputs("    {\"id\":", stream) == EOF || write_node_id(stream, node) != 0 || fprintf(stream, ",\"domain\":\"%s\",\"kind\":", node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource") < 0 || write_json_string(stream, node_kind_name(node)) != 0 ||
-       fputs(",\"run_id\":", stream) == EOF || write_json_string(stream, node->run_id) != 0 || fprintf(stream, ",\"pid\":%ld,\"context\":%zu,\"sequence\":%zu", node->pid, node->context_id, node->sequence) < 0)
+    int         p101_single_result_;
+    int         operation_status;
+    const char *domain;
+    const char *kind_name;
+
+    operation_status = fputs("    {\"id\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_node_id(stream, node);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    domain           = node->domain == P101_TOOL_MODEL_NODE_CALL ? "call" : "resource";
+    operation_status = fprintf(stream, ",\"domain\":\"%s\",\"kind\":", domain);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    kind_name        = node_kind_name(node);
+    operation_status = write_json_string(stream, kind_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"run_id\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->run_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, ",\"pid\":%ld,\"context\":%zu,\"sequence\":%zu", node->pid, node->context_id, node->sequence);
+    if(operation_status < 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(node->domain == P101_TOOL_MODEL_NODE_CALL)
     {
-        if(fputs(",\"name\":", stream) == EOF || write_json_string(stream, node->call_name) != 0 || fputs(",\"arguments\":", stream) == EOF || write_json_string(stream, node->arguments) != 0 || fputs(",\"result\":", stream) == EOF ||
-           write_json_string(stream, node->result) != 0)
+        operation_status = fputs(",\"name\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_json_string(stream, node->call_name);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = fputs(",\"arguments\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_json_string(stream, node->arguments);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = fputs(",\"result\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_json_string(stream, node->result);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    else if(write_resource_fields(stream, node) != 0)
+    else
+    {
+        operation_status = write_resource_fields(stream, node);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+    }
+    operation_status = fputc(',', stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    p101_single_result_ = fputc(',', stream) == EOF || write_time(stream, node) != 0 || fputc(',', stream) == EOF || write_source(stream, node) != 0 || fputc('}', stream) == EOF ? -1 : 0;
+    operation_status = write_time(stream, node);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputc(',', stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_source(stream, node);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status    = fputc('}', stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -544,40 +881,68 @@ p101_single_exit_:
 
 static int write_resource_fields(FILE *stream, const struct p101_tool_model_node *node)
 {
-    int p101_single_result_;
+    int         p101_single_result_;
+    int         operation_status;
+    const char *operation_name;
+    const char *cloexec_text;
+
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
-        p101_single_result_ = fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd) < 0 ? -1 : 0;
+        operation_status    = fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd);
+        p101_single_result_ = operation_status < 0 ? -1 : 0;
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
-        if(fputs(",\"resource_class\":\"allocation\",\"resource_identity\":", stream) == EOF || write_json_string(stream, node->ptr) != 0)
+        operation_status = fputs(",\"resource_class\":\"allocation\",\"resource_identity\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_json_string(stream, node->ptr);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
         if(node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC)
         {
-            if(fputs(",\"related_identity\":", stream) == EOF || write_json_string(stream, node->new_ptr) != 0)
+            operation_status = fputs(",\"related_identity\":", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+            operation_status = write_json_string(stream, node->new_ptr);
+            if(operation_status != 0)
             {
                 p101_single_result_ = -1;
                 goto p101_single_exit_;
             }
         }
-        p101_single_result_ = fprintf(stream, ",\"size\":%zu", node->size) < 0 ? -1 : 0;
+        operation_status    = fprintf(stream, ",\"size\":%zu", node->size);
+        p101_single_result_ = operation_status < 0 ? -1 : 0;
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FORK || node->record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
     {
-        if(fprintf(stream, ",\"child_pid\":%ld", node->child_pid) < 0)
+        operation_status = fprintf(stream, ",\"child_pid\":%ld", node->child_pid);
+        if(operation_status < 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
         if(node->record_kind == P101_TOOL_EVENT_RECORD_SPAWN)
         {
-            p101_single_result_ = fputs(",\"target\":", stream) == EOF || write_json_string(stream, node->target) != 0 ? -1 : 0;
+            operation_status = fputs(",\"target\":", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+            operation_status    = write_json_string(stream, node->target);
+            p101_single_result_ = operation_status != 0 ? -1 : 0;
             goto p101_single_exit_;
         }
         p101_single_result_ = 0;
@@ -585,25 +950,100 @@ static int write_resource_fields(FILE *stream, const struct p101_tool_model_node
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC || node->record_kind == P101_TOOL_EVENT_RECORD_EXEC_FAIL)
     {
-        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC && fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd) < 0)
+        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC)
+        {
+            operation_status = fprintf(stream, ",\"resource_class\":\"fd\",\"resource_identity\":\"%d\"", node->fd);
+            if(operation_status < 0)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+        }
+        operation_status = fputs(",\"target\":", stream);
+        if(operation_status == EOF)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
-        if(fputs(",\"target\":", stream) == EOF || write_json_string(stream, node->target) != 0)
+        operation_status = write_json_string(stream, node->target);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
-        p101_single_result_ = node->record_kind == P101_TOOL_EVENT_RECORD_EXEC && fprintf(stream, ",\"cloexec\":%s", (int)node->cloexec ? "true" : "false") < 0 ? -1 : 0;
+        p101_single_result_ = 0;
+        if(node->record_kind == P101_TOOL_EVENT_RECORD_EXEC)
+        {
+            cloexec_text        = (int)node->cloexec ? "true" : "false";
+            operation_status    = fprintf(stream, ",\"cloexec\":%s", cloexec_text);
+            p101_single_result_ = operation_status < 0 ? -1 : 0;
+        }
         goto p101_single_exit_;
     }
 
-    p101_single_result_ = (fputs(",\"operation\":", stream) == EOF || write_json_string(stream, resource_operation_name(node->resource_kind)) != 0 || fputs(",\"resource_class\":", stream) == EOF || write_json_string(stream, node->resource_class) != 0 ||
-                                   fputs(",\"resource_identity\":", stream) == EOF || write_json_string(stream, node->resource_id) != 0 || fputs(",\"related_identity\":", stream) == EOF || write_json_string(stream, node->related_id) != 0 ||
-                                   fputs(",\"metadata\":", stream) == EOF || write_json_string(stream, node->metadata) != 0 || fprintf(stream, ",\"size\":%zu", node->size) < 0 ?
-                               -1 :
-                               0);
+    operation_status = fputs(",\"operation\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_name   = resource_operation_name(node->resource_kind);
+    operation_status = write_json_string(stream, operation_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"resource_class\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->resource_class);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"resource_identity\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->resource_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"related_identity\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->related_id);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fputs(",\"metadata\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->metadata);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status    = fprintf(stream, ",\"size\":%zu", node->size);
+    p101_single_result_ = operation_status < 0 ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -612,8 +1052,12 @@ p101_single_exit_:
 
 static int write_edges(FILE *stream, const struct p101_tool_model *model)
 {
-    int p101_single_result_;
-    if(fputs("  \"edges\": [\n", stream) == EOF)
+    int         p101_single_result_;
+    int         operation_status;
+    const char *kind_name;
+
+    operation_status = fputs("  \"edges\": [\n", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -623,14 +1067,61 @@ static int write_edges(FILE *stream, const struct p101_tool_model *model)
         const struct p101_tool_model_edge *edge;
 
         edge = &model->edges[index];
-        if((index > 0U && fputs(",\n", stream) == EOF) || fputs("    {\"kind\":", stream) == EOF || write_json_string(stream, edge_kind_name(edge->kind)) != 0 || fputs(",\"from\":", stream) == EOF ||
-           write_node_id(stream, &model->nodes[edge->from].value) != 0 || fputs(",\"to\":", stream) == EOF || write_node_id(stream, &model->nodes[edge->to].value) != 0 || fputc('}', stream) == EOF)
+        if(index > 0U)
+        {
+            operation_status = fputs(",\n", stream);
+            if(operation_status == EOF)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
+        }
+        operation_status = fputs("    {\"kind\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        kind_name        = edge_kind_name(edge->kind);
+        operation_status = write_json_string(stream, kind_name);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = fputs(",\"from\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_node_id(stream, &model->nodes[edge->from].value);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = fputs(",\"to\":", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = write_node_id(stream, &model->nodes[edge->to].value);
+        if(operation_status != 0)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
+        operation_status = fputc('}', stream);
+        if(operation_status == EOF)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    p101_single_result_ = fputs("\n  ]", stream) == EOF ? -1 : 0;
+    operation_status    = fputs("\n  ]", stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -640,35 +1131,46 @@ p101_single_exit_:
 static int write_time(FILE *stream, const struct p101_tool_model_node *node)
 {
     int p101_single_result_;
-    if(fputs("\"monotonic_ns\":", stream) == EOF)
+    int operation_status;
+
+    operation_status = fputs("\"monotonic_ns\":", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(node->monotonic_ns_available)
     {
-        if(fprintf(stream, "%zu", node->monotonic_ns) < 0)
+        operation_status = fprintf(stream, "%zu", node->monotonic_ns);
+        if(operation_status < 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    else if(fputs("null", stream) == EOF)
+    else
     {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        operation_status = fputs("null", stream);
+        if(operation_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
-    if(fputs(",\"wall_unix_ns\":", stream) == EOF)
+    operation_status = fputs(",\"wall_unix_ns\":", stream);
+    if(operation_status == EOF)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
     if(node->wall_unix_ns_available)
     {
-        p101_single_result_ = fprintf(stream, "%zu", node->wall_unix_ns) < 0 ? -1 : 0;
+        operation_status    = fprintf(stream, "%zu", node->wall_unix_ns);
+        p101_single_result_ = operation_status < 0 ? -1 : 0;
         goto p101_single_exit_;
     }
-    p101_single_result_ = fputs("null", stream) == EOF ? -1 : 0;
+    operation_status    = fputs("null", stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -677,20 +1179,55 @@ p101_single_exit_:
 
 static int write_source(FILE *stream, const struct p101_tool_model_node *node)
 {
-    return fputs("\"source\":{\"file\":", stream) == EOF || write_json_string(stream, node->file_name) != 0 || fprintf(stream, ",\"line\":%d,\"function\":", node->line_number) < 0 || write_json_string(stream, node->function_name) != 0 ||
-                   fputc('}', stream) == EOF ?
-               -1 :
-               0;
+    int p101_single_result_;
+    int operation_status;
+
+    operation_status = fputs("\"source\":{\"file\":", stream);
+    if(operation_status == EOF)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->file_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = fprintf(stream, ",\"line\":%d,\"function\":", node->line_number);
+    if(operation_status < 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status = write_json_string(stream, node->function_name);
+    if(operation_status != 0)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    operation_status    = fputc('}', stream);
+    p101_single_result_ = operation_status == EOF ? -1 : 0;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int write_json_string(FILE *stream, const char *text)
 {
-    return p101_record_write_json_string(stream, text);
+    int p101_single_result_;
+
+    p101_single_result_ = p101_record_write_json_string(stream, text);
+    return p101_single_result_;
 }
 
 static int write_json_string_contents(FILE *stream, const char *text)
 {
-    return p101_record_write_json_string_contents(stream, text);
+    int p101_single_result_;
+
+    p101_single_result_ = p101_record_write_json_string_contents(stream, text);
+    return p101_single_result_;
 }
 
 static const char *fd_kind_name(p101_tool_event_fd_kind kind)

@@ -13,6 +13,7 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$work"
 
 "$fixture" "$work/valid.json"
+# P101_BOUNDARY_CASE boundary:durable-tool-receipt:clean
 "$cli" verify "$work/valid.json" >"$work/valid.out"
 grep -q '^valid receipt:' "$work/valid.out"
 "$cli" require-clean "$work/valid.json" >"$work/clean.out"
@@ -29,6 +30,7 @@ fi
 grep -q 'receipt outcome is not clean: findings' "$work/findings-clean.out"
 
 sed 's/"fixture"/"gixture"/' "$work/valid.json" >"$work/tampered.json"
+# P101_BOUNDARY_CASE boundary:durable-tool-receipt:binding_swap
 if "$cli" verify "$work/tampered.json" >"$work/tampered.out" 2>&1; then
     echo "tampered receipt unexpectedly passed" >&2
     exit 1
@@ -36,6 +38,7 @@ fi
 grep -q 'bad-digest' "$work/tampered.out"
 
 sed 's/receipt-v4/receipt-v3/' "$work/valid.json" >"$work/old.json"
+# P101_BOUNDARY_CASE boundary:durable-tool-receipt:stale_version
 if "$cli" verify "$work/old.json" >"$work/old.out" 2>&1; then
     echo "old receipt unexpectedly passed" >&2
     exit 1
@@ -43,6 +46,7 @@ fi
 grep -q 'bad-version' "$work/old.out"
 
 printf '{"schema":' >"$work/truncated.json"
+# P101_BOUNDARY_CASE boundary:durable-tool-receipt:typed_refusal
 if "$cli" verify "$work/truncated.json" >"$work/truncated.out" 2>&1; then
     echo "truncated receipt unexpectedly passed" >&2
     exit 1

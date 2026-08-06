@@ -51,6 +51,8 @@ static void test_invalid_and_allocation_failure(void)
     EXPECT(p101_tool_event_stream_health_incomplete_producers(NULL) == 0U);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:identity_mismatch")
+
 static void test_growth_and_lookup(void)
 {
     struct p101_tool_event_stream_health health = {0};

@@ -89,24 +89,34 @@ static bool allocation_should_fail(void)
 
 static void *lifecycle_allocate(size_t size)
 {
+    void *p101_single_result_;
 #ifdef P101_TOOL_EVENT_TESTING
     if(allocation_should_fail())
     {
         return NULL;
     }
 #endif
-    return malloc(size);
+    p101_single_result_ = malloc(size);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void *lifecycle_reallocate(void *memory, size_t size)
 {
+    void *p101_single_result_;
 #ifdef P101_TOOL_EVENT_TESTING
     if(allocation_should_fail())
     {
         return NULL;
     }
 #endif
-    return realloc(memory, size);
+    p101_single_result_ = realloc(memory, size);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int format_fd_identifier(char *identifier, size_t size, int fd)
@@ -124,8 +134,10 @@ static int format_fd_identifier(char *identifier, size_t size, int fd)
 struct p101_tool_event_lifecycle_model *p101_tool_event_lifecycle_create(struct p101_error *err)
 {
     struct p101_tool_event_lifecycle_model *model;
+    void                                   *storage;
 
-    model = (struct p101_tool_event_lifecycle_model *)lifecycle_allocate(sizeof(*model));
+    storage = lifecycle_allocate(sizeof(*model));
+    model   = (struct p101_tool_event_lifecycle_model *)storage;
     if(model == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
@@ -141,7 +153,7 @@ void p101_tool_event_lifecycle_destroy(struct p101_tool_event_lifecycle_model **
 {
     if(model == NULL || *model == NULL)
     {
-        return;
+        goto p101_single_exit_;
     }
 
     for(size_t i = 0U; i < (*model)->entry_count; i++)
@@ -161,20 +173,35 @@ void p101_tool_event_lifecycle_destroy(struct p101_tool_event_lifecycle_model **
     free((*model)->findings);
     free(*model);
     *model = NULL;
+
+p101_single_exit_:
+    return;
 }
 
 int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
 {
-    int p101_single_result_;
-    int result;
+    int    p101_single_result_;
+    int    result;
+    size_t run_id_length;
+    int    run_id_comparison;
 
-    if(model == NULL || record == NULL || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    run_id_length = 0U;
+    if(record != NULL && record->run_id != NULL)
+    {
+        run_id_length = strlen(record->run_id);
+    }
+    if(model == NULL || record == NULL || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || run_id_length > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    if(model->run_id[0] != '\0' && strcmp(model->run_id, record->run_id) != 0)
+    run_id_comparison = 0;
+    if(model->run_id[0] != '\0')
+    {
+        run_id_comparison = strcmp(model->run_id, record->run_id);
+    }
+    if(model->run_id[0] != '\0' && run_id_comparison != 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
@@ -223,7 +250,10 @@ int p101_tool_event_lifecycle_ingest(struct p101_error *err, struct p101_tool_ev
 #endif
     if(result == 0 && model->run_id[0] == '\0')
     {
-        (void)memcpy(model->run_id, record->run_id, strlen(record->run_id) + 1U);
+        void *copy_result;
+
+        copy_result = memcpy(model->run_id, record->run_id, run_id_length + 1U);
+        (void)copy_result;
     }
     p101_single_result_ = result;
     goto p101_single_exit_;
@@ -279,7 +309,10 @@ static int ingest_resource(struct p101_error *err, struct p101_tool_event_lifecy
              */
             if(record->related_id == NULL || record->related_id[0] == '\0')
             {
-                result = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, record, find_latest(model, record->pid, record->resource_class, record->resource_id, false));
+                const struct p101_tool_event_lifecycle_entry *previous;
+
+                previous = find_latest(model, record->pid, record->resource_class, record->resource_id, false);
+                result   = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, record, previous);
             }
             else
             {
@@ -310,8 +343,10 @@ static int ingest_fd(struct p101_error *err, struct p101_tool_event_lifecycle_mo
     int                           p101_single_result_;
     struct p101_tool_event_record normalized;
     char                          identifier[FD_IDENTIFIER_LENGTH];
+    int                           format_status;
 
-    if(format_fd_identifier(identifier, sizeof(identifier), record->fd) < 0)
+    format_status = format_fd_identifier(identifier, sizeof(identifier), record->fd);
+    if(format_status < 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
@@ -336,6 +371,8 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
     struct p101_tool_event_record                 normalized;
     const struct p101_tool_event_lifecycle_entry *entry;
     int                                           result;
+    bool                                          pointer_is_null;
+    bool                                          new_pointer_is_null;
 
     normalized                = *record;
     normalized.resource_class = allocation_resource_class;
@@ -343,7 +380,8 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
 
     if(record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC)
     {
-        if(pointer_is_null_text(record->ptr))
+        pointer_is_null = pointer_is_null_text(record->ptr);
+        if(pointer_is_null)
         {
             p101_single_result_ = 0;
             goto p101_single_exit_;
@@ -355,7 +393,8 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
     }
     if(record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE)
     {
-        if(pointer_is_null_text(record->ptr))
+        pointer_is_null = pointer_is_null_text(record->ptr);
+        if(pointer_is_null)
         {
             p101_single_result_ = 0;
             goto p101_single_exit_;
@@ -366,9 +405,11 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
         goto p101_single_exit_;
     }
 
-    if(pointer_is_null_text(record->ptr))
+    pointer_is_null = pointer_is_null_text(record->ptr);
+    if(pointer_is_null)
     {
-        if(pointer_is_null_text(record->new_ptr))
+        new_pointer_is_null = pointer_is_null_text(record->new_ptr);
+        if(new_pointer_is_null)
         {
             p101_single_result_ = 0;
             goto p101_single_exit_;
@@ -384,8 +425,10 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
     {
         normalized.resource_kind = P101_TOOL_EVENT_RESOURCE_REPLACE;
         normalized.resource_id   = record->ptr;
-        result                   = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, &normalized, find_latest(model, record->pid, "allocation", record->ptr, false));
-        if(result != 0 || pointer_is_null_text(record->new_ptr))
+        entry                    = find_latest(model, record->pid, "allocation", record->ptr, false);
+        result                   = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, &normalized, entry);
+        new_pointer_is_null      = pointer_is_null_text(record->new_ptr);
+        if(result != 0 || new_pointer_is_null)
         {
             p101_single_result_ = result;
             goto p101_single_exit_;
@@ -395,7 +438,8 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
         p101_single_result_      = ingest_resource(err, model, &normalized);
         goto p101_single_exit_;
     }
-    if(pointer_is_null_text(record->new_ptr))
+    new_pointer_is_null = pointer_is_null_text(record->new_ptr);
+    if(new_pointer_is_null)
     {
         p101_single_result_ = 0;
         goto p101_single_exit_;
@@ -446,13 +490,18 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         struct p101_tool_event_record                 inherited;
         char                                          identifier[FD_IDENTIFIER_LENGTH];
         size_t                                        identifier_length;
+        int                                           class_comparison;
+        const struct p101_tool_event_lifecycle_entry *existing;
+        int                                           operation_status;
 
-        entry = &model->entries[index];
-        if(entry->pid != record->pid || !entry->live || strcmp(entry->resource_class, "fd") != 0)
+        entry            = &model->entries[index];
+        class_comparison = strcmp(entry->resource_class, "fd");
+        if(entry->pid != record->pid || !entry->live || class_comparison != 0)
         {
             continue;
         }
-        if(find_latest(model, record->child_pid, entry->resource_class, entry->resource_id, false) != NULL)
+        existing = find_latest(model, record->child_pid, entry->resource_class, entry->resource_id, false);
+        if(existing != NULL)
         {
             continue;
         }
@@ -478,12 +527,14 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         inherited.resource_class = fd_resource_class;
         inherited.resource_id    = identifier;
         inherited.size           = entry->size;
-        if(add_entry(err, model, &inherited, identifier) != 0)
+        operation_status         = add_entry(err, model, &inherited, identifier);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
-        if(reconcile_stray_releases(err, model, record->child_pid, fd_resource_class, identifier) != 0)
+        operation_status = reconcile_stray_releases(err, model, record->child_pid, fd_resource_class, identifier);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
@@ -498,7 +549,33 @@ p101_single_exit_:
 
 static bool pointer_is_null_text(const char *text)
 {
-    return (text == NULL || text[0] == '\0' || strcmp(text, "-") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "0x0") == 0) != 0;
+    bool p101_single_result_;
+    int  comparison;
+
+    p101_single_result_ = false;
+    if(text == NULL || text[0] == '\0')
+    {
+        p101_single_result_ = true;
+    }
+    if(!p101_single_result_)
+    {
+        comparison          = strcmp(text, "-");
+        p101_single_result_ = comparison == 0;
+    }
+    if(!p101_single_result_)
+    {
+        comparison          = strcmp(text, "(nil)");
+        p101_single_result_ = comparison == 0;
+    }
+    if(!p101_single_result_)
+    {
+        comparison          = strcmp(text, "0x0");
+        p101_single_result_ = comparison == 0;
+    }
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
@@ -507,8 +584,10 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
     struct p101_tool_event_lifecycle_entry *entry;
     struct p101_tool_event_record           normalized;
     char                                    identifier[FD_IDENTIFIER_LENGTH];
+    int                                     operation_status;
 
-    if(format_fd_identifier(identifier, sizeof(identifier), record->fd) < 0)
+    operation_status = format_fd_identifier(identifier, sizeof(identifier), record->fd);
+    if(operation_status < 0)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
@@ -534,7 +613,8 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
     normalized.resource_kind  = P101_TOOL_EVENT_RESOURCE_RELEASE;
     normalized.resource_class = fd_resource_class;
     normalized.resource_id    = identifier;
-    if(release_entry(err, model, &normalized) != 0)
+    operation_status          = release_entry(err, model, &normalized);
+    if(operation_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -596,6 +676,8 @@ static void rollback_exec(struct p101_tool_event_lifecycle_model *model, long pi
 int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_event_lifecycle_model *model)
 {
     int p101_single_result_;
+    int operation_status;
+
     if(model == NULL)
     {
         P101_ERROR_RAISE_CHECK(err);
@@ -618,7 +700,8 @@ int p101_tool_event_lifecycle_finish(struct p101_error *err, struct p101_tool_ev
         {
             continue;
         }
-        if(add_leak_finding(err, model, entry) != 0)
+        operation_status = add_leak_finding(err, model, entry);
+        if(operation_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;
@@ -661,9 +744,11 @@ static char *copy_text(struct p101_error *err, const char *text)
     char  *p101_single_result_;
     char  *copy;
     size_t length;
+    void  *storage;
 
-    length = strlen(text);
-    copy   = (char *)lifecycle_allocate(length + 1U);
+    length  = strlen(text);
+    storage = lifecycle_allocate(length + 1U);
+    copy    = (char *)storage;
     if(copy == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
@@ -684,9 +769,13 @@ static struct p101_tool_event_lifecycle_entry *find_latest(struct p101_tool_even
     for(size_t i = model->entry_count; i > 0U; i--)
     {
         struct p101_tool_event_lifecycle_entry *entry;
+        int                                     class_comparison;
+        int                                     id_comparison;
 
-        entry = &model->entries[i - 1U];
-        if(entry->pid == pid && strcmp(entry->resource_class, resource_class) == 0 && strcmp(entry->resource_id, resource_id) == 0 && (!live_only || entry->live))
+        entry            = &model->entries[i - 1U];
+        class_comparison = strcmp(entry->resource_class, resource_class);
+        id_comparison    = strcmp(entry->resource_id, resource_id);
+        if(entry->pid == pid && class_comparison == 0 && id_comparison == 0 && (!live_only || entry->live))
         {
             p101_single_result_ = entry;
             goto p101_single_exit_;
@@ -714,13 +803,15 @@ static int add_entry(struct p101_error *err, struct p101_tool_event_lifecycle_mo
     {
         size_t                                  capacity;
         struct p101_tool_event_lifecycle_entry *grown;
+        void                                   *storage;
 
         capacity = INITIAL_CAPACITY;
         if(model->entry_capacity != 0U)
         {
             capacity = model->entry_capacity * 2U;
         }
-        grown = (struct p101_tool_event_lifecycle_entry *)lifecycle_reallocate(model->entries, capacity * sizeof(*grown));
+        storage = lifecycle_reallocate(model->entries, capacity * sizeof(*grown));
+        grown   = (struct p101_tool_event_lifecycle_entry *)storage;
         if(grown == NULL)
         {
             P101_ERROR_RAISE_ERRNO(err, errno);
@@ -776,13 +867,15 @@ static int ensure_finding_capacity(struct p101_error *err, struct p101_tool_even
     {
         size_t                                    capacity;
         struct p101_tool_event_lifecycle_finding *grown;
+        void                                     *storage;
 
         capacity = INITIAL_CAPACITY;
         if(model->finding_capacity != 0U)
         {
             capacity = model->finding_capacity * 2U;
         }
-        grown = (struct p101_tool_event_lifecycle_finding *)lifecycle_reallocate(model->findings, capacity * sizeof(*grown));
+        storage = lifecycle_reallocate(model->findings, capacity * sizeof(*grown));
+        grown   = (struct p101_tool_event_lifecycle_finding *)storage;
         if(grown == NULL)
         {
             P101_ERROR_RAISE_ERRNO(err, errno);
@@ -807,8 +900,10 @@ static int add_leak_finding(struct p101_error *err, struct p101_tool_event_lifec
     char                                     *resource_id;
     char                                     *function_name;
     char                                     *file_name;
+    int                                       capacity_status;
 
-    if(ensure_finding_capacity(err, model) != 0)
+    capacity_status = ensure_finding_capacity(err, model);
+    if(capacity_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -857,8 +952,10 @@ static int add_finding(struct p101_error *err, struct p101_tool_event_lifecycle_
     char                                     *resource_id_copy;
     const char                               *previous_function_name;
     const char                               *previous_file_name;
+    int                                       capacity_status;
 
-    if(ensure_finding_capacity(err, model) != 0)
+    capacity_status = ensure_finding_capacity(err, model);
+    if(capacity_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -942,9 +1039,13 @@ static bool take_stray_release(struct p101_tool_event_lifecycle_model *model, lo
     for(size_t index = 0U; index < model->finding_count; index++)
     {
         const struct p101_tool_event_lifecycle_finding *candidate;
+        int                                             class_comparison;
+        int                                             id_comparison;
 
-        candidate = &model->findings[index];
-        if(candidate->kind != P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE || candidate->pid != pid || strcmp(candidate->resource_class, resource_class) != 0 || strcmp(candidate->resource_id, resource_id) != 0)
+        candidate        = &model->findings[index];
+        class_comparison = strcmp(candidate->resource_class, resource_class);
+        id_comparison    = strcmp(candidate->resource_id, resource_id);
+        if(candidate->kind != P101_TOOL_EVENT_LIFECYCLE_FINDING_STRAY_RELEASE || candidate->pid != pid || class_comparison != 0 || id_comparison != 0)
         {
             continue;
         }
@@ -970,8 +1071,10 @@ static int reconcile_stray_releases(struct p101_error *err, struct p101_tool_eve
 {
     int                                      p101_single_result_;
     struct p101_tool_event_lifecycle_finding finding;
+    bool                                     found;
 
-    while(take_stray_release(model, pid, resource_class, resource_id, &finding))
+    found = take_stray_release(model, pid, resource_class, resource_id, &finding);
+    while(found)
     {
         struct p101_tool_event_record release;
         int                           result;
@@ -996,6 +1099,7 @@ static int reconcile_stray_releases(struct p101_error *err, struct p101_tool_eve
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
+        found = take_stray_release(model, pid, resource_class, resource_id, &finding);
     }
     p101_single_result_ = 0;
     goto p101_single_exit_;

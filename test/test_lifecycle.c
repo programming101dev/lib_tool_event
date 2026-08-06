@@ -45,6 +45,8 @@ static struct p101_tool_event_lifecycle_model *new_model(struct p101_error **err
     return p101_tool_event_lifecycle_create(*err);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:resource-lifecycle-replay:typed_refusal")
+
 static void test_public_boundaries(void)
 {
     struct p101_error                      *err;
@@ -108,6 +110,8 @@ static void test_public_boundaries(void)
     p101_error_destroy(err);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:resource-lifecycle-replay:identity_mismatch")
+
 static void test_rejects_mixed_run_identity(void)
 {
     struct p101_error                      *err;
@@ -123,6 +127,8 @@ static void test_rejects_mixed_run_identity(void)
     p101_tool_event_lifecycle_destroy(&model);
     p101_error_destroy(err);
 }
+
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:resource-lifecycle-replay:clean")
 
 static void test_release_and_replace_findings(void)
 {
@@ -506,6 +512,8 @@ static void test_fork_reconciliation_propagates_release_failure(void)
     p101_error_destroy(err);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:resource-lifecycle-replay:resource_limit")
+
 static void test_capacity_growth(void)
 {
     struct p101_error                      *err;
@@ -649,6 +657,8 @@ static void test_finding_allocation_failures(void)
         p101_error_destroy(err);
     }
 }
+
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:resource-lifecycle-replay:binding_swap")
 
 static void test_failure_propagation(void)
 {

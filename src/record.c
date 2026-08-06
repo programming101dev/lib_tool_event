@@ -103,7 +103,7 @@ void p101_record_unescape_field(char *field)
 
     if(field == NULL)
     {
-        return;
+        goto p101_single_exit_;
     }
 
     read_cursor  = field;
@@ -138,6 +138,9 @@ void p101_record_unescape_field(char *field)
         }
     }
     *write_cursor = '\0';
+
+p101_single_exit_:
+    return;
 }
 
 int p101_record_parse_size(const char *text, size_t *out)
@@ -183,18 +186,25 @@ p101_single_exit_:
 int p101_record_write_json_string(FILE *stream, const char *text)
 {
     int p101_single_result_;
+    int write_status;
     if(stream == NULL || text == NULL)
     {
         errno               = EINVAL;
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    if(fputc('"', stream) == EOF || p101_record_write_json_string_contents(stream, text) != 0)
+    write_status = fputc('"', stream);
+    if(write_status != EOF)
+    {
+        write_status = p101_record_write_json_string_contents(stream, text);
+    }
+    if(write_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    p101_single_result_ = fputc('"', stream) == EOF ? -1 : 0;
+    write_status        = fputc('"', stream);
+    p101_single_result_ = write_status == EOF ? -1 : 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -205,6 +215,7 @@ int p101_record_write_json_string_contents(FILE *stream, const char *text)
 {
     int                  p101_single_result_;
     const unsigned char *cursor;
+    int                  write_status;
 
     if(stream == NULL || text == NULL)
     {
@@ -218,69 +229,41 @@ int p101_record_write_json_string_contents(FILE *stream, const char *text)
         switch(*cursor)
         {
             case '"':
-                if(fputs("\\\"", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\\"", stream);
                 break;
             case '\\':
-                if(fputs("\\\\", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\\\", stream);
                 break;
             case '\b':
-                if(fputs("\\b", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\b", stream);
                 break;
             case '\f':
-                if(fputs("\\f", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\f", stream);
                 break;
             case '\n':
-                if(fputs("\\n", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\n", stream);
                 break;
             case '\r':
-                if(fputs("\\r", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\r", stream);
                 break;
             case '\t':
-                if(fputs("\\t", stream) == EOF)
-                {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
-                }
+                write_status = fputs("\\t", stream);
                 break;
             default:
                 if(*cursor < JSON_CONTROL_BYTE_LIMIT)
                 {
-                    if(fprintf(stream, "\\u%04x", (unsigned int)*cursor) < 0)
-                    {
-                        p101_single_result_ = -1;
-                        goto p101_single_exit_;
-                    }
+                    write_status = fprintf(stream, "\\u%04x", (unsigned int)*cursor);
                 }
-                else if(fputc((int)*cursor, stream) == EOF)
+                else
                 {
-                    p101_single_result_ = -1;
-                    goto p101_single_exit_;
+                    write_status = fputc((int)*cursor, stream);
                 }
                 break;
+        }
+        if(write_status < 0 || write_status == EOF)
+        {
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
         }
         cursor++;
     }

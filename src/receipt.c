@@ -85,6 +85,8 @@ int p101_tool_event_test_put_json_string(FILE *stream, const char *value)
 
 static int close_receipt_file(int fd)
 {
+    int result;
+
 #ifdef P101_TOOL_EVENT_TESTING
     if(forced_close_error != 0)
     {
@@ -92,17 +94,26 @@ static int close_receipt_file(int fd)
 
         error_number       = forced_close_error;
         forced_close_error = 0;
-        (void)close(fd);
-        errno = error_number;
-        return -1;
+        result             = close(fd);
+        (void)result;
+        errno  = error_number;
+        result = -1;
+        goto p101_single_exit_;
     }
 #endif
-    return close(fd);
+    result = close(fd);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return result;
 }
 
 static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
 {
-    int p101_single_result_;
+    int         p101_single_result_;
+    const char *outcome_name;
+    const char *failure_name;
+
     if(receipt == NULL || receipt->tool_name == NULL || receipt->tool_version == NULL || receipt->input_schema == NULL || receipt->input_identity == NULL || receipt->policy_schema == NULL || receipt->policy_identity == NULL || receipt->run_identity == NULL ||
        receipt->failed_stage == NULL || receipt->first_diagnostic == NULL || receipt->does_not_prove == NULL)
     {
@@ -114,7 +125,9 @@ static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
         p101_single_result_ = 0;
         goto p101_single_exit_;
     }
-    if(p101_tool_outcome_name(receipt->outcome) == NULL || p101_tool_failure_reason_name(receipt->failure_reason) == NULL)
+    outcome_name = p101_tool_outcome_name(receipt->outcome);
+    failure_name = p101_tool_failure_reason_name(receipt->failure_reason);
+    if(outcome_name == NULL || failure_name == NULL)
     {
         p101_single_result_ = 0;
         goto p101_single_exit_;
@@ -166,10 +179,14 @@ p101_single_exit_:
 
 static int receipt_parse_literal(const char **cursor, const char *literal)
 {
-    size_t length = strlen(literal);
-    int    result = -1;
+    size_t length;
+    int    comparison;
+    int    result;
 
-    if(strncmp(*cursor, literal, length) == 0)
+    length     = strlen(literal);
+    result     = -1;
+    comparison = strncmp(*cursor, literal, length);
+    if(comparison == 0)
     {
         *cursor += length;
         result = 0;
@@ -181,6 +198,7 @@ static int receipt_parse_string(const char **cursor, char *output, size_t output
 {
     int    p101_single_result_;
     size_t remaining;
+    size_t unicode_remaining;
     size_t used;
     int    result;
 
@@ -243,7 +261,8 @@ static int receipt_parse_string(const char **cursor, char *output, size_t output
                 unsigned char high;
                 unsigned char low;
 
-                if(strlen(*cursor) < JSON_UNICODE_HEX_DIGITS || (*cursor)[0] != '0' || (*cursor)[1] != '0')
+                unicode_remaining = strlen(*cursor);
+                if(unicode_remaining < JSON_UNICODE_HEX_DIGITS || (*cursor)[0] != '0' || (*cursor)[1] != '0')
                 {
                     goto done;
                 }
@@ -332,19 +351,26 @@ done:
 
 static int receipt_parse_boolean(const char **cursor, int *value)
 {
-    int result = 0;
+    int parse_status;
+    int result;
 
-    if(receipt_parse_literal(cursor, "true") == 0)
+    result       = 0;
+    parse_status = receipt_parse_literal(cursor, "true");
+    if(parse_status == 0)
     {
         *value = 1;
     }
-    else if(receipt_parse_literal(cursor, "false") == 0)
-    {
-        *value = 0;
-    }
     else
     {
-        result = -1;
+        parse_status = receipt_parse_literal(cursor, "false");
+        if(parse_status == 0)
+        {
+            *value = 0;
+        }
+        else
+        {
+            result = -1;
+        }
     }
     return result;
 }
@@ -387,32 +413,59 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
     char        outcome[RECEIPT_TOKEN_TEXT_SIZE];
     char        failure[RECEIPT_TOKEN_TEXT_SIZE];
     char        schema[RECEIPT_SCHEMA_TEXT_SIZE];
-    int         result = -1;
+    const char *token_name;
+    size_t      literal_length;
+    int         comparison;
+    int         parse_status;
+    int         result;
 
+    result = -1;
     memset(parsed, 0, sizeof(*parsed));
-    if(receipt_parse_literal(&cursor, "{\"schema\":") != 0 || receipt_parse_string(&cursor, schema, sizeof(schema)) != 0)
-    {
-        goto done;
-    }
-    if(strcmp(schema, "p101-tool-run-receipt-v4") != 0)
+#define REQUIRE_RECEIPT_PARSE(expression)                                                                                                                                                                                                                          \
+    do                                                                                                                                                                                                                                                             \
+    {                                                                                                                                                                                                                                                              \
+        parse_status = (expression);                                                                                                                                                                                                                               \
+        if(parse_status != 0)                                                                                                                                                                                                                                      \
+        {                                                                                                                                                                                                                                                          \
+            goto done;                                                                                                                                                                                                                                             \
+        }                                                                                                                                                                                                                                                          \
+    } while(0)
+
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "{\"schema\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, schema, sizeof(schema)));
+    comparison = strcmp(schema, "p101-tool-run-receipt-v4");
+    if(comparison != 0)
     {
         result = 1;
         goto done;
     }
-    if(receipt_parse_literal(&cursor, ",\"tool\":{\"name\":") != 0 || receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_NAME], sizeof(parsed->text[RECEIPT_TOOL_NAME])) != 0 || receipt_parse_literal(&cursor, ",\"version\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_VERSION], sizeof(parsed->text[RECEIPT_TOOL_VERSION])) != 0 || receipt_parse_literal(&cursor, "},\"input\":{\"schema\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_SCHEMA], sizeof(parsed->text[RECEIPT_INPUT_SCHEMA])) != 0 || receipt_parse_literal(&cursor, ",\"identity\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_IDENTITY], sizeof(parsed->text[RECEIPT_INPUT_IDENTITY])) != 0 || receipt_parse_literal(&cursor, "},\"policy\":{\"schema\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_SCHEMA], sizeof(parsed->text[RECEIPT_POLICY_SCHEMA])) != 0 || receipt_parse_literal(&cursor, ",\"identity\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_IDENTITY], sizeof(parsed->text[RECEIPT_POLICY_IDENTITY])) != 0 || receipt_parse_literal(&cursor, "},\"run_identity\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_RUN_IDENTITY], sizeof(parsed->text[RECEIPT_RUN_IDENTITY])) != 0 || receipt_parse_literal(&cursor, ",\"outcome\":") != 0 || receipt_parse_string(&cursor, outcome, sizeof(outcome)) != 0 ||
-       receipt_parse_literal(&cursor, ",\"failure\":{\"reason\":") != 0 || receipt_parse_string(&cursor, failure, sizeof(failure)) != 0 || receipt_parse_literal(&cursor, ",\"stage\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_FAILED_STAGE], sizeof(parsed->text[RECEIPT_FAILED_STAGE])) != 0 || receipt_parse_literal(&cursor, ",\"first_diagnostic\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_FIRST_DIAGNOSTIC], sizeof(parsed->text[RECEIPT_FIRST_DIAGNOSTIC])) != 0 || receipt_parse_literal(&cursor, "},\"checks\":{\"attempted\":") != 0 ||
-       receipt_parse_size(&cursor, &parsed->receipt.checks_attempted) != 0 || receipt_parse_literal(&cursor, ",\"completed\":") != 0 || receipt_parse_size(&cursor, &parsed->receipt.checks_completed) != 0 || receipt_parse_literal(&cursor, "}") != 0)
-    {
-        goto done;
-    }
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"tool\":{\"name\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_NAME], sizeof(parsed->text[RECEIPT_TOOL_NAME])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"version\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_VERSION], sizeof(parsed->text[RECEIPT_TOOL_VERSION])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"input\":{\"schema\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_SCHEMA], sizeof(parsed->text[RECEIPT_INPUT_SCHEMA])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"identity\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_IDENTITY], sizeof(parsed->text[RECEIPT_INPUT_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"policy\":{\"schema\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_SCHEMA], sizeof(parsed->text[RECEIPT_POLICY_SCHEMA])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"identity\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_IDENTITY], sizeof(parsed->text[RECEIPT_POLICY_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"run_identity\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_RUN_IDENTITY], sizeof(parsed->text[RECEIPT_RUN_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"outcome\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, outcome, sizeof(outcome)));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"failure\":{\"reason\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, failure, sizeof(failure)));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"stage\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_FAILED_STAGE], sizeof(parsed->text[RECEIPT_FAILED_STAGE])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"first_diagnostic\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_FIRST_DIAGNOSTIC], sizeof(parsed->text[RECEIPT_FIRST_DIAGNOSTIC])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"checks\":{\"attempted\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_size(&cursor, &parsed->receipt.checks_attempted));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"completed\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_size(&cursor, &parsed->receipt.checks_completed));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "}"));
 
     parsed->receipt.tool_name        = parsed->text[RECEIPT_TOOL_NAME];
     parsed->receipt.tool_version     = parsed->text[RECEIPT_TOOL_VERSION];
@@ -426,7 +479,9 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
 
     for(int value = P101_TOOL_OUTCOME_CLEAN; value <= P101_TOOL_OUTCOME_TOOL_ERROR; value++)
     {
-        if(strcmp(outcome, p101_tool_outcome_name((p101_tool_outcome)value)) == 0)
+        token_name = p101_tool_outcome_name((p101_tool_outcome)value);
+        comparison = strcmp(outcome, token_name);
+        if(comparison == 0)
         {
             parsed->receipt.outcome = (p101_tool_outcome)value;
             break;
@@ -434,31 +489,57 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
     }
     for(int value = P101_TOOL_FAILURE_NONE; value <= P101_TOOL_FAILURE_TOOL_ERROR; value++)
     {
-        if(strcmp(failure, p101_tool_failure_reason_name((p101_tool_failure_reason)value)) == 0)
+        token_name = p101_tool_failure_reason_name((p101_tool_failure_reason)value);
+        comparison = strcmp(failure, token_name);
+        if(comparison == 0)
         {
             parsed->receipt.failure_reason = (p101_tool_failure_reason)value;
             break;
         }
     }
-    if(strcmp(outcome, p101_tool_outcome_name(parsed->receipt.outcome)) != 0 || strcmp(failure, p101_tool_failure_reason_name(parsed->receipt.failure_reason)) != 0)
+    token_name = p101_tool_outcome_name(parsed->receipt.outcome);
+    comparison = strcmp(outcome, token_name);
+    if(comparison != 0)
+    {
+        goto done;
+    }
+    token_name = p101_tool_failure_reason_name(parsed->receipt.failure_reason);
+    comparison = strcmp(failure, token_name);
+    if(comparison != 0)
     {
         goto done;
     }
 
-    if(strncmp(cursor, ",\"fingerprint\":", strlen(",\"fingerprint\":")) == 0)
+    literal_length = sizeof(",\"fingerprint\":") - 1U;
+    comparison     = strncmp(cursor, ",\"fingerprint\":", literal_length);
+    if(comparison == 0)
     {
         char algorithm[RECEIPT_SCHEMA_TEXT_SIZE];
 
         parsed->fingerprint_present = 1;
-        if(receipt_parse_literal(&cursor, ",\"fingerprint\":{\"algorithm\":") != 0 || receipt_parse_string(&cursor, algorithm, sizeof(algorithm)) != 0 || strcmp(algorithm, "fnv1a64-change-detector") != 0 || receipt_parse_literal(&cursor, ",\"bytes\":") != 0 ||
-           receipt_parse_size(&cursor, &parsed->fingerprint.bytes) != 0 || receipt_parse_literal(&cursor, ",\"records\":") != 0 || receipt_parse_size(&cursor, &parsed->fingerprint.records) != 0 || receipt_parse_literal(&cursor, ",\"value\":\"") != 0 ||
-           receipt_parse_hex(&cursor, &parsed->fingerprint.fnv1a64) != 0 || receipt_parse_literal(&cursor, "\",\"final_newline\":") != 0 || receipt_parse_boolean(&cursor, &parsed->fingerprint.final_newline) != 0 || receipt_parse_literal(&cursor, "}") != 0)
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"fingerprint\":{\"algorithm\":"));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, algorithm, sizeof(algorithm)));
+        comparison = strcmp(algorithm, "fnv1a64-change-detector");
+        if(comparison != 0)
         {
             goto done;
         }
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"bytes\":"));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_size(&cursor, &parsed->fingerprint.bytes));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"records\":"));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_size(&cursor, &parsed->fingerprint.records));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"value\":\""));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_hex(&cursor, &parsed->fingerprint.fnv1a64));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "\",\"final_newline\":"));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_boolean(&cursor, &parsed->fingerprint.final_newline));
+        REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "}"));
     }
-    if(receipt_parse_literal(&cursor, ",\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\",\"value\":\"") != 0 || receipt_parse_hex(&cursor, &parsed->claimed_digest) != 0 || receipt_parse_literal(&cursor, "\"},\"does_not_prove\":") != 0 ||
-       receipt_parse_string(&cursor, parsed->text[RECEIPT_DOES_NOT_PROVE], sizeof(parsed->text[RECEIPT_DOES_NOT_PROVE])) != 0 || receipt_parse_literal(&cursor, "}\n") != 0 || *cursor != '\0')
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\",\"value\":\""));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_hex(&cursor, &parsed->claimed_digest));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "\"},\"does_not_prove\":"));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_DOES_NOT_PROVE], sizeof(parsed->text[RECEIPT_DOES_NOT_PROVE])));
+    REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "}\n"));
+    if(*cursor != '\0')
     {
         goto done;
     }
@@ -466,6 +547,7 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
     result                         = 0;
 
 done:
+#undef REQUIRE_RECEIPT_PARSE
     return result;
 }
 
@@ -513,11 +595,15 @@ static uint64_t fnv1a64_bytes(uint64_t hash, const unsigned char *bytes, size_t 
 static uint64_t digest_text(uint64_t hash, const char *label, const char *value)
 {
     static const unsigned char separator = 0U;
+    size_t                     length;
 
-    hash = fnv1a64_bytes(hash, (const unsigned char *)label, strlen(label));
-    hash = fnv1a64_bytes(hash, &separator, 1U);
-    hash = fnv1a64_bytes(hash, (const unsigned char *)value, strlen(value));
-    return fnv1a64_bytes(hash, &separator, 1U);
+    length = strlen(label);
+    hash   = fnv1a64_bytes(hash, (const unsigned char *)label, length);
+    hash   = fnv1a64_bytes(hash, &separator, 1U);
+    length = strlen(value);
+    hash   = fnv1a64_bytes(hash, (const unsigned char *)value, length);
+    hash   = fnv1a64_bytes(hash, &separator, 1U);
+    return hash;
 }
 
 static uint64_t digest_u64(uint64_t hash, const char *label, uint64_t value)
@@ -531,20 +617,25 @@ static uint64_t digest_u64(uint64_t hash, const char *label, uint64_t value)
         bytes[index] = (unsigned char)(value >> shift);
     }
     hash = digest_text(hash, "field", label);
-    return fnv1a64_bytes(hash, bytes, sizeof(bytes));
+    hash = fnv1a64_bytes(hash, bytes, sizeof(bytes));
+    return hash;
 }
 
 static uint64_t digest_size(uint64_t hash, const char *label, size_t value)
 {
-    return digest_u64(hash, label, (uint64_t)value);
+    hash = digest_u64(hash, label, (uint64_t)value);
+    return hash;
 }
 
 uint64_t p101_tool_run_receipt_digest(const struct p101_tool_run_receipt *receipt, const struct p101_tool_event_fingerprint *fingerprint)
 {
-    uint64_t p101_single_result_;
-    uint64_t hash;
+    uint64_t    p101_single_result_;
+    uint64_t    hash;
+    const char *name;
+    int         valid;
 
-    if(!receipt_is_valid(receipt))
+    valid = receipt_is_valid(receipt);
+    if(!valid)
     {
         p101_single_result_ = 0U;
         goto p101_single_exit_;
@@ -557,8 +648,10 @@ uint64_t p101_tool_run_receipt_digest(const struct p101_tool_run_receipt *receip
     hash = digest_text(hash, "policy_schema", receipt->policy_schema);
     hash = digest_text(hash, "policy_identity", receipt->policy_identity);
     hash = digest_text(hash, "run_identity", receipt->run_identity);
-    hash = digest_text(hash, "outcome", p101_tool_outcome_name(receipt->outcome));
-    hash = digest_text(hash, "failure_reason", p101_tool_failure_reason_name(receipt->failure_reason));
+    name = p101_tool_outcome_name(receipt->outcome);
+    hash = digest_text(hash, "outcome", name);
+    name = p101_tool_failure_reason_name(receipt->failure_reason);
+    hash = digest_text(hash, "failure_reason", name);
     hash = digest_text(hash, "failed_stage", receipt->failed_stage);
     hash = digest_text(hash, "first_diagnostic", receipt->first_diagnostic);
     hash = digest_size(hash, "checks_attempted", receipt->checks_attempted);
@@ -582,7 +675,9 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
 {
     int                    p101_single_result_;
     struct parsed_receipt *parsed;
+    void                  *storage;
     uint64_t               actual_digest;
+    int                    valid;
     int                    parse_result;
     int                    result;
 
@@ -594,7 +689,8 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
     }
     memset(validation, 0, sizeof(*validation));
     validation->status = P101_TOOL_RECEIPT_INVALID;
-    parsed             = (struct parsed_receipt *)malloc(sizeof(*parsed));
+    storage            = malloc(sizeof(*parsed));
+    parsed             = (struct parsed_receipt *)storage;
     if(parsed == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, ENOMEM);
@@ -609,7 +705,12 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
         validation->status = P101_TOOL_RECEIPT_BAD_VERSION;
         goto done;
     }
-    if(parse_result != 0 || !receipt_is_valid(&parsed->receipt))
+    valid = 0;
+    if(parse_result == 0)
+    {
+        valid = receipt_is_valid(&parsed->receipt);
+    }
+    if(parse_result != 0 || !valid)
     {
         goto done;
     }
@@ -645,7 +746,9 @@ int p101_tool_run_receipt_validate_file(struct p101_error *err, const char *path
     size_t      file_size;
     size_t      used;
     int         fd;
+    int         operation_status;
     int         result;
+    void       *storage;
 
     if(path == NULL || maximum_bytes == 0U || validation == NULL)
     {
@@ -660,9 +763,10 @@ int p101_tool_run_receipt_validate_file(struct p101_error *err, const char *path
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    text   = NULL;
-    result = -1;
-    if(fstat(fd, &status) != 0)
+    text             = NULL;
+    result           = -1;
+    operation_status = fstat(fd, &status);
+    if(operation_status != 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         goto done;
@@ -678,7 +782,8 @@ int p101_tool_run_receipt_validate_file(struct p101_error *err, const char *path
      * document. It avoids relying on the analyzer to connect fstat()'s size
      * with the read loop before the terminating byte is assigned below.
      */
-    text = (char *)calloc(file_size + 1U, sizeof(*text));
+    storage = calloc(file_size + 1U, sizeof(*text));
+    text    = (char *)storage;
     if(text == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, ENOMEM);
@@ -705,7 +810,8 @@ int p101_tool_run_receipt_validate_file(struct p101_error *err, const char *path
 
 done:
     free(text);
-    if(close_receipt_file(fd) != 0 && result == 0)
+    operation_status = close_receipt_file(fd);
+    if(operation_status != 0 && result == 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         result = -1;
@@ -724,6 +830,7 @@ int p101_tool_event_fingerprint_file(struct p101_error *err, const char *path, s
     uint64_t hash;
     size_t   newline_count;
     int      final_newline;
+    int      operation_status;
     int      result;
 
     if(path == NULL || fingerprint == NULL || maximum_bytes == 0U || maximum_records == 0U)
@@ -805,7 +912,8 @@ int p101_tool_event_fingerprint_file(struct p101_error *err, const char *path, s
         }
     }
 
-    if(close_receipt_file(fd) != 0 && result == 0)
+    operation_status = close_receipt_file(fd);
+    if(operation_status != 0 && result == 0)
     {
         P101_ERROR_RAISE_ERRNO(err, errno);
         result = -1;
@@ -924,9 +1032,13 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
     int         p101_single_result_;
     const char *failure_reason_name;
     const char *outcome_name;
+    const char *final_newline_text;
     uint64_t    receipt_digest;
+    int         operation_status;
+    int         valid;
 
-    if(stream == NULL || !receipt_is_valid(receipt))
+    valid = receipt_is_valid(receipt);
+    if(stream == NULL || !valid)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
@@ -940,41 +1052,66 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
     {
         forced_receipt_failure_stage = 0;
         errno                        = 0;
-        return receipt_write_failed(err);
+        p101_single_result_          = receipt_write_failed(err);
+        goto p101_single_exit_;
     }
 #endif
+#define REQUIRE_RECEIPT_WRITE(expression)                                                                                                                                                                                                                          \
+    do                                                                                                                                                                                                                                                             \
+    {                                                                                                                                                                                                                                                              \
+        operation_status = (expression);                                                                                                                                                                                                                           \
+        if(operation_status < 0)                                                                                                                                                                                                                                   \
+        {                                                                                                                                                                                                                                                          \
+            goto write_failed;                                                                                                                                                                                                                                     \
+        }                                                                                                                                                                                                                                                          \
+    } while(0)
+
     // GCOVR_EXCL_BR_START: test builds inject each writer phase immediately
     // above/below these calls; individual libc write sites are not portable.
-    if(fputs("{\"schema\":\"p101-tool-run-receipt-v4\",\"tool\":{\"name\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_name) != 0 || fputs(",\"version\":", stream) == EOF || receipt_put_json_string(stream, receipt->tool_version) != 0 ||
-       fputs("},\"input\":{\"schema\":", stream) == EOF || receipt_put_json_string(stream, receipt->input_schema) != 0 || fputs(",\"identity\":", stream) == EOF || receipt_put_json_string(stream, receipt->input_identity) != 0 ||
-       fputs("},\"policy\":{\"schema\":", stream) == EOF || receipt_put_json_string(stream, receipt->policy_schema) != 0 || fputs(",\"identity\":", stream) == EOF || receipt_put_json_string(stream, receipt->policy_identity) != 0 ||
-       fputs("},\"run_identity\":", stream) == EOF || receipt_put_json_string(stream, receipt->run_identity) != 0 || fputs(",\"outcome\":", stream) == EOF || receipt_put_json_string(stream, outcome_name) != 0 ||
-       fputs(",\"failure\":{\"reason\":", stream) == EOF || receipt_put_json_string(stream, failure_reason_name) != 0 || fputs(",\"stage\":", stream) == EOF || receipt_put_json_string(stream, receipt->failed_stage) != 0 ||
-       fputs(",\"first_diagnostic\":", stream) == EOF || receipt_put_json_string(stream, receipt->first_diagnostic) != 0 || fprintf(stream, "},\"checks\":{\"attempted\":%zu,\"completed\":%zu}", receipt->checks_attempted, receipt->checks_completed) < 0)
-    {
-        p101_single_result_ = receipt_write_failed(err);
-        goto p101_single_exit_;    // GCOVR_EXCL_LINE -- staged failure covers this output phase.
-    }
+    REQUIRE_RECEIPT_WRITE(fputs("{\"schema\":\"p101-tool-run-receipt-v4\",\"tool\":{\"name\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->tool_name));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"version\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->tool_version));
+    REQUIRE_RECEIPT_WRITE(fputs("},\"input\":{\"schema\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->input_schema));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"identity\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->input_identity));
+    REQUIRE_RECEIPT_WRITE(fputs("},\"policy\":{\"schema\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->policy_schema));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"identity\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->policy_identity));
+    REQUIRE_RECEIPT_WRITE(fputs("},\"run_identity\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->run_identity));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"outcome\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, outcome_name));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"failure\":{\"reason\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, failure_reason_name));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"stage\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->failed_stage));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"first_diagnostic\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->first_diagnostic));
+    REQUIRE_RECEIPT_WRITE(fprintf(stream, "},\"checks\":{\"attempted\":%zu,\"completed\":%zu}", receipt->checks_attempted, receipt->checks_completed));
     // GCOVR_EXCL_BR_STOP
 #ifdef P101_TOOL_EVENT_TESTING
     if(forced_receipt_failure_stage == 2)
     {
         forced_receipt_failure_stage = 0;
         errno                        = EIO;
-        return receipt_write_failed(err);
+        p101_single_result_          = receipt_write_failed(err);
+        goto p101_single_exit_;
     }
 #endif
     // GCOVR_EXCL_BR_START: the staged fingerprint failure above verifies this
     // phase without relying on a platform-specific failing FILE implementation.
-    if(fingerprint != NULL && fprintf(stream,
-                                      ",\"fingerprint\":{\"algorithm\":\"fnv1a64-change-detector\",\"bytes\":%zu,\"records\":%zu,\"value\":\"%016" PRIx64 "\",\"final_newline\":%s}",
-                                      fingerprint->bytes,
-                                      fingerprint->records,
-                                      fingerprint->fnv1a64,
-                                      fingerprint->final_newline != 0 ? "true" : "false") < 0)
+    if(fingerprint != NULL)
     {
-        p101_single_result_ = receipt_write_failed(err);
-        goto p101_single_exit_;    // GCOVR_EXCL_LINE -- staged failure covers this output phase.
+        final_newline_text = fingerprint->final_newline != 0 ? "true" : "false";
+        operation_status =
+            fprintf(stream, ",\"fingerprint\":{\"algorithm\":\"fnv1a64-change-detector\",\"bytes\":%zu,\"records\":%zu,\"value\":\"%016" PRIx64 "\",\"final_newline\":%s}", fingerprint->bytes, fingerprint->records, fingerprint->fnv1a64, final_newline_text);
+        if(operation_status < 0)
+        {
+            goto write_failed;
+        }
     }
     // GCOVR_EXCL_BR_STOP
 #ifdef P101_TOOL_EVENT_TESTING
@@ -982,20 +1119,24 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
     {
         forced_receipt_failure_stage = 0;
         errno                        = EIO;
-        return receipt_write_failed(err);
+        p101_single_result_          = receipt_write_failed(err);
+        goto p101_single_exit_;
     }
 #endif
     // GCOVR_EXCL_BR_START: the staged final failure above verifies propagation.
-    if(fprintf(stream, ",\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\",\"value\":\"%016" PRIx64 "\"}", receipt_digest) < 0 || fputs(",\"does_not_prove\":", stream) == EOF || receipt_put_json_string(stream, receipt->does_not_prove) != 0 ||
-       fputs("}\n", stream) == EOF)
-    {
-        p101_single_result_ = receipt_write_failed(err);
-        goto p101_single_exit_;    // GCOVR_EXCL_LINE -- staged failure covers this output phase.
-    }
+    REQUIRE_RECEIPT_WRITE(fprintf(stream, ",\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\",\"value\":\"%016" PRIx64 "\"}", receipt_digest));
+    REQUIRE_RECEIPT_WRITE(fputs(",\"does_not_prove\":", stream));
+    REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->does_not_prove));
+    REQUIRE_RECEIPT_WRITE(fputs("}\n", stream));
     // GCOVR_EXCL_BR_STOP
     p101_single_result_ = 0;
     goto p101_single_exit_;
 
+write_failed:
+    p101_single_result_ = receipt_write_failed(err);
+    goto p101_single_exit_;    // GCOVR_EXCL_LINE -- staged failure covers each output phase.
+
 p101_single_exit_:
+#undef REQUIRE_RECEIPT_WRITE
     return p101_single_result_;
 }

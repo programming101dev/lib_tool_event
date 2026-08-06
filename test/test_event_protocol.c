@@ -106,6 +106,8 @@ static void test_line_reader(void)
     p101_error_destroy(err);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:stale_version")
+
 static void test_small_helpers(void)
 {
     static const char *const prefixes[] = {
@@ -201,6 +203,8 @@ static void test_small_helpers(void)
     EXPECT(strcmp(p101_tool_event_parse_status_name((p101_tool_event_parse_status)99), "unknown event parse status") == 0);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:clean")
+
 static void test_valid_parser_records(void)
 {
     static const char *const records[] = {
@@ -229,6 +233,8 @@ static void test_valid_parser_records(void)
         EXPECT(parse_text(records[index], &record) == P101_TOOL_EVENT_PARSE_OK);
     }
 }
+
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:typed_refusal")
 
 static void test_malformed_parser_records(void)
 {
@@ -497,6 +503,9 @@ static void test_invalid_writer_records(void)
     set_common_output(&output, (p101_tool_event_record_kind)99);
     expect_invalid_output(&output);
 }
+
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:binding_swap")
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:resource_limit")
 
 static void test_writer_failures_and_field_boundaries(void)
 {

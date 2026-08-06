@@ -48,8 +48,10 @@ target_compile_options(p101_tool_event_under_test PRIVATE ${_COV})
 target_compile_options(p101_error_under_test PRIVATE ${_COV})
 target_compile_options(test_p101_tool_event PRIVATE ${_COV})
 target_link_options(test_p101_tool_event PRIVATE ${_COV})
-target_compile_definitions(test_p101_tool_event PRIVATE
-        P101_TOOL_EVENT_FINGERPRINT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fingerprint.txt")
+configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fingerprint.txt"
+        "${CMAKE_CURRENT_BINARY_DIR}/fingerprint.txt"
+        COPYONLY)
 add_test(NAME test_p101_tool_event COMMAND test_p101_tool_event)
 
 add_executable(test_p101_tool_event_protocol test_event_protocol.c)

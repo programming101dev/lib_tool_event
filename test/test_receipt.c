@@ -60,6 +60,8 @@ static void test_tool_outcomes(void)
     EXPECT(p101_tool_failure_reason_name((p101_tool_failure_reason)-1) == NULL);
 }
 
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:durable-tool-receipt:identity_mismatch")
+
 static void test_run_receipt_json(void)
 {
     struct p101_error                      *err;
@@ -361,6 +363,8 @@ static void test_empty_and_unterminated_files(void)
     p101_error_destroy(err);
     EXPECT(unlink(path) == 0);
 }
+
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:durable-tool-receipt:resource_limit")
 
 static void test_record_and_byte_limits(void)
 {

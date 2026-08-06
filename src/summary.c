@@ -42,19 +42,33 @@ static bool is_decimal_digit(char value)
 
 static bool is_hex_digit(char value)
 {
-    return (is_decimal_digit(value) || (strchr("abcdefABCDEF", (int)value) != NULL && value != '\0')) != 0;
+    bool        decimal;
+    const char *hex_digit;
+
+    decimal   = is_decimal_digit(value);
+    hex_digit = strchr("abcdefABCDEF", (int)value);
+    return (decimal || (hex_digit != NULL && value != '\0')) != 0;
 }
 
 static char *copy_json_text(const char *text, size_t text_size)
 {
-    char *copy;
+    char       *copy;
+    const void *terminator;
+    void       *storage;
 
-    copy = NULL;
-    if(text == NULL || text_size == SIZE_MAX || memchr(text, '\0', text_size) != NULL)
+    copy       = NULL;
+    terminator = NULL;
+    storage    = NULL;
+    if(text != NULL && text_size != SIZE_MAX)
+    {
+        terminator = memchr(text, '\0', text_size);
+    }
+    if(text == NULL || text_size == SIZE_MAX || terminator != NULL)
     {
         goto p101_single_exit_;
     }
-    copy = (char *)malloc(text_size + 1U);
+    storage = malloc(text_size + 1U);
+    copy    = (char *)storage;
     if(copy == NULL)
     {
         goto p101_single_exit_;
@@ -85,13 +99,19 @@ bool p101_tool_event_parse_json_size(const char *text, const char *key, size_t *
 {
     _Bool p101_single_result_;
     char  wanted[JSON_KEY_CAPACITY];
+    bool  key_valid;
 
-    if(text == NULL || key == NULL || value == NULL || !key_text(key, wanted))
+    key_valid = false;
+    if(text != NULL && key != NULL && value != NULL)
+    {
+        key_valid = key_text(key, wanted);
+    }
+    if(!key_valid)
     {
         p101_single_result_ = (_Bool)(false);
         goto p101_single_exit_;
     }
-    p101_single_result_ = (find_top_level_size(text, wanted, value));
+    p101_single_result_ = find_top_level_size(text, wanted, value);
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -119,7 +139,9 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
     struct json_cursor cursor;
     unsigned int       seen;
     bool               first;
+    bool               parsed;
     bool               schema_ok;
+    int                comparison;
 
     enum
     {
@@ -165,8 +187,9 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
             }
             skip_space(&cursor);
         }
-        first = false;
-        if(!parse_string(&cursor, key, sizeof(key)))
+        first  = false;
+        parsed = parse_string(&cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -179,31 +202,51 @@ bool p101_tool_event_parse_policy_summary_json(const char *text, const char *sch
         }
         skip_space(&cursor);
 
-        if(strcmp(key, "schema") == 0)
+        comparison = strcmp(key, "schema");
+        if(comparison == 0)
         {
             char actual_schema[JSON_KEY_CAPACITY];
 
-            if((seen & SEEN_SCHEMA) != 0U || !parse_string(&cursor, actual_schema, sizeof(actual_schema)))
+            parsed = false;
+            if((seen & SEEN_SCHEMA) == 0U)
+            {
+                parsed = parse_string(&cursor, actual_schema, sizeof(actual_schema));
+            }
+            if(!parsed)
             {
                 p101_single_result_ = (_Bool)(false);
                 goto p101_single_exit_;
             }
             seen |= SEEN_SCHEMA;
-            schema_ok = strcmp(actual_schema, schema) == 0;
+            comparison = strcmp(actual_schema, schema);
+            schema_ok  = comparison == 0;
         }
-        else if(strcmp(key, "summary") == 0)
+        else
         {
-            if((seen & SEEN_SUMMARY) != 0U || !parse_policy_summary(&cursor, summary))
+            comparison = strcmp(key, "summary");
+            if(comparison == 0)
             {
-                p101_single_result_ = (_Bool)(false);
-                goto p101_single_exit_;
+                parsed = false;
+                if((seen & SEEN_SUMMARY) == 0U)
+                {
+                    parsed = parse_policy_summary(&cursor, summary);
+                }
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+                seen |= SEEN_SUMMARY;
             }
-            seen |= SEEN_SUMMARY;
-        }
-        else if(!skip_value(&cursor, 0U))
-        {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
+            else
+            {
+                parsed = skip_value(&cursor, 0U);
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+            }
         }
     }
 
@@ -237,8 +280,10 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
     struct json_cursor cursor;
     unsigned int       seen;
     bool               first;
+    bool               parsed;
     bool               result;
     bool               schema_ok;
+    int                comparison;
 
     enum
     {
@@ -255,6 +300,23 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
         SEEN_REFUSED       = 1U << 10U,
         SEEN_LOG_HEALTH    = 1U << 11U,
         SEEN_REQUIRED      = (1U << 12U) - 1U
+    };
+
+    enum resource_summary_field
+    {
+        RESOURCE_FIELD_UNKNOWN,
+        RESOURCE_FIELD_SCHEMA,
+        RESOURCE_FIELD_RECORDS,
+        RESOURCE_FIELD_FD_LEAKS,
+        RESOURCE_FIELD_ALLOCATION_LEAKS,
+        RESOURCE_FIELD_BAD_RELEASES,
+        RESOURCE_FIELD_EXEC_INHERITANCES,
+        RESOURCE_FIELD_GENERIC_RESOURCE_LEAKS,
+        RESOURCE_FIELD_GENERIC_BAD_RELEASES,
+        RESOURCE_FIELD_MALFORMED,
+        RESOURCE_FIELD_BAD_VERSION,
+        RESOURCE_FIELD_REFUSED,
+        RESOURCE_FIELD_LOG_HEALTH
     };
 
     if(text == NULL || summary == NULL)
@@ -278,6 +340,7 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
     while(true)
     {
         char key[JSON_KEY_CAPACITY];
+        int  field;
 
         skip_space(&cursor);
         if(*cursor.current == '}')
@@ -294,8 +357,9 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
             }
             skip_space(&cursor);
         }
-        first = false;
-        if(!parse_string(&cursor, key, sizeof(key)))
+        first  = false;
+        parsed = parse_string(&cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -311,7 +375,12 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
 #define PARSE_UNIQUE_SIZE(member, bit)                                                                                                                                                                                                                             \
     do                                                                                                                                                                                                                                                             \
     {                                                                                                                                                                                                                                                              \
-        if((seen & (bit)) != 0U || !parse_size(&cursor, &summary->member))                                                                                                                                                                                         \
+        parsed = false;                                                                                                                                                                                                                                            \
+        if((seen & (bit)) == 0U)                                                                                                                                                                                                                                   \
+        {                                                                                                                                                                                                                                                          \
+            parsed = parse_size(&cursor, &summary->member);                                                                                                                                                                                                        \
+        }                                                                                                                                                                                                                                                          \
+        if(!parsed)                                                                                                                                                                                                                                                \
         {                                                                                                                                                                                                                                                          \
             result = false;                                                                                                                                                                                                                                        \
             goto done;                                                                                                                                                                                                                                             \
@@ -319,71 +388,143 @@ bool p101_tool_event_parse_resource_summary_json(const char *text, struct p101_t
         seen |= (bit);                                                                                                                                                                                                                                             \
     } while(0)
 
-        if(strcmp(key, "schema") == 0)
+        field      = RESOURCE_FIELD_UNKNOWN;
+        comparison = strcmp(key, "schema");
+        if(comparison == 0)
         {
-            char schema[JSON_KEY_CAPACITY];
+            field = RESOURCE_FIELD_SCHEMA;
+        }
+        comparison = strcmp(key, "records");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_RECORDS;
+        }
+        comparison = strcmp(key, "fd_leaks");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_FD_LEAKS;
+        }
+        comparison = strcmp(key, "allocation_leaks");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_ALLOCATION_LEAKS;
+        }
+        comparison = strcmp(key, "bad_releases");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_BAD_RELEASES;
+        }
+        comparison = strcmp(key, "exec_inheritances");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_EXEC_INHERITANCES;
+        }
+        comparison = strcmp(key, "generic_resource_leaks");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_GENERIC_RESOURCE_LEAKS;
+        }
+        comparison = strcmp(key, "generic_bad_releases");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_GENERIC_BAD_RELEASES;
+        }
+        comparison = strcmp(key, "malformed");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_MALFORMED;
+        }
+        comparison = strcmp(key, "bad_version");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_BAD_VERSION;
+        }
+        comparison = strcmp(key, "refused");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_REFUSED;
+        }
+        comparison = strcmp(key, "log_health");
+        if(comparison == 0)
+        {
+            field = RESOURCE_FIELD_LOG_HEALTH;
+        }
 
-            if((seen & SEEN_SCHEMA) != 0U || !parse_string(&cursor, schema, sizeof(schema)))
+        switch(field)
+        {
+            case RESOURCE_FIELD_SCHEMA:
             {
+                char schema[JSON_KEY_CAPACITY];
+
+                parsed = false;
+                if((seen & SEEN_SCHEMA) == 0U)
+                {
+                    parsed = parse_string(&cursor, schema, sizeof(schema));
+                }
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+                seen |= SEEN_SCHEMA;
+                comparison = strcmp(schema, "p101-resource-policy-findings-v1");
+                schema_ok  = comparison == 0;
+                break;
+            }
+            case RESOURCE_FIELD_RECORDS:
+                PARSE_UNIQUE_SIZE(records, SEEN_RECORDS);
+                break;
+            case RESOURCE_FIELD_FD_LEAKS:
+                PARSE_UNIQUE_SIZE(fd_leaks, SEEN_FD_LEAKS);
+                break;
+            case RESOURCE_FIELD_ALLOCATION_LEAKS:
+                PARSE_UNIQUE_SIZE(allocation_leaks, SEEN_ALLOC_LEAKS);
+                break;
+            case RESOURCE_FIELD_BAD_RELEASES:
+                PARSE_UNIQUE_SIZE(bad_releases, SEEN_BAD_RELEASES);
+                break;
+            case RESOURCE_FIELD_EXEC_INHERITANCES:
+                PARSE_UNIQUE_SIZE(exec_inheritances, SEEN_EXEC);
+                break;
+            case RESOURCE_FIELD_GENERIC_RESOURCE_LEAKS:
+                PARSE_UNIQUE_SIZE(generic_resource_leaks, SEEN_GENERIC_LEAKS);
+                break;
+            case RESOURCE_FIELD_GENERIC_BAD_RELEASES:
+                PARSE_UNIQUE_SIZE(generic_bad_releases, SEEN_GENERIC_BAD);
+                break;
+            case RESOURCE_FIELD_MALFORMED:
+                PARSE_UNIQUE_SIZE(malformed, SEEN_MALFORMED);
+                break;
+            case RESOURCE_FIELD_BAD_VERSION:
+                PARSE_UNIQUE_SIZE(bad_version, SEEN_BAD_VERSION);
+                break;
+            case RESOURCE_FIELD_REFUSED:
+                PARSE_UNIQUE_SIZE(refused, SEEN_REFUSED);
+                break;
+            case RESOURCE_FIELD_LOG_HEALTH:
+                parsed = false;
+                if((seen & SEEN_LOG_HEALTH) == 0U)
+                {
+                    parsed = parse_log_health(&cursor, &summary->log_complete);
+                }
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+                seen |= SEEN_LOG_HEALTH;
+                break;
+            case RESOURCE_FIELD_UNKNOWN:
+                parsed = skip_value(&cursor, 0U);
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+                break;
+            default:
                 p101_single_result_ = (_Bool)(false);
                 goto p101_single_exit_;
-            }
-            seen |= SEEN_SCHEMA;
-            schema_ok = strcmp(schema, "p101-resource-policy-findings-v1") == 0;
-        }
-        else if(strcmp(key, "records") == 0)
-        {
-            PARSE_UNIQUE_SIZE(records, SEEN_RECORDS);
-        }
-        else if(strcmp(key, "fd_leaks") == 0)
-        {
-            PARSE_UNIQUE_SIZE(fd_leaks, SEEN_FD_LEAKS);
-        }
-        else if(strcmp(key, "allocation_leaks") == 0)
-        {
-            PARSE_UNIQUE_SIZE(allocation_leaks, SEEN_ALLOC_LEAKS);
-        }
-        else if(strcmp(key, "bad_releases") == 0)
-        {
-            PARSE_UNIQUE_SIZE(bad_releases, SEEN_BAD_RELEASES);
-        }
-        else if(strcmp(key, "exec_inheritances") == 0)
-        {
-            PARSE_UNIQUE_SIZE(exec_inheritances, SEEN_EXEC);
-        }
-        else if(strcmp(key, "generic_resource_leaks") == 0)
-        {
-            PARSE_UNIQUE_SIZE(generic_resource_leaks, SEEN_GENERIC_LEAKS);
-        }
-        else if(strcmp(key, "generic_bad_releases") == 0)
-        {
-            PARSE_UNIQUE_SIZE(generic_bad_releases, SEEN_GENERIC_BAD);
-        }
-        else if(strcmp(key, "malformed") == 0)
-        {
-            PARSE_UNIQUE_SIZE(malformed, SEEN_MALFORMED);
-        }
-        else if(strcmp(key, "bad_version") == 0)
-        {
-            PARSE_UNIQUE_SIZE(bad_version, SEEN_BAD_VERSION);
-        }
-        else if(strcmp(key, "refused") == 0)
-        {
-            PARSE_UNIQUE_SIZE(refused, SEEN_REFUSED);
-        }
-        else if(strcmp(key, "log_health") == 0)
-        {
-            if((seen & SEEN_LOG_HEALTH) != 0U || !parse_log_health(&cursor, &summary->log_complete))
-            {
-                p101_single_result_ = (_Bool)(false);
-                goto p101_single_exit_;
-            }
-            seen |= SEEN_LOG_HEALTH;
-        }
-        else if(!skip_value(&cursor, 0U))
-        {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
         }
 #undef PARSE_UNIQUE_SIZE
     }
@@ -429,6 +570,8 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
     _Bool        p101_single_result_;
     unsigned int seen;
     bool         first;
+    bool         parsed;
+    int          comparison;
 
     enum
     {
@@ -464,8 +607,9 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
             }
             skip_space(cursor);
         }
-        first = false;
-        if(!parse_string(cursor, key, sizeof(key)))
+        first  = false;
+        parsed = parse_string(cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -478,9 +622,15 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
         }
         skip_space(cursor);
 
-        if(strcmp(key, "records") == 0)
+        comparison = strcmp(key, "records");
+        if(comparison == 0)
         {
-            if((seen & SEEN_RECORDS) != 0U || !parse_size(cursor, &summary->records))
+            parsed = false;
+            if((seen & SEEN_RECORDS) == 0U)
+            {
+                parsed = parse_size(cursor, &summary->records);
+            }
+            if(!parsed)
             {
                 p101_single_result_ = (_Bool)(false);
                 goto p101_single_exit_;
@@ -488,19 +638,32 @@ static bool parse_policy_summary(struct json_cursor *cursor, struct p101_tool_ev
             seen |= SEEN_RECORDS;
             summary->has_records = true;
         }
-        else if(strcmp(key, "findings") == 0)
+        else
         {
-            if((seen & SEEN_FINDINGS) != 0U || !parse_size(cursor, &summary->findings))
+            comparison = strcmp(key, "findings");
+            if(comparison == 0)
             {
-                p101_single_result_ = (_Bool)(false);
-                goto p101_single_exit_;
+                parsed = false;
+                if((seen & SEEN_FINDINGS) == 0U)
+                {
+                    parsed = parse_size(cursor, &summary->findings);
+                }
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+                seen |= SEEN_FINDINGS;
             }
-            seen |= SEEN_FINDINGS;
-        }
-        else if(!skip_value(cursor, 0U))
-        {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
+            else
+            {
+                parsed = skip_value(cursor, 0U);
+                if(!parsed)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
+            }
         }
     }
 
@@ -521,8 +684,10 @@ static void skip_space(struct json_cursor *cursor)
 
 static bool parse_string(struct json_cursor *cursor, char *output, size_t output_size)
 {
-    _Bool  p101_single_result_;
-    size_t used;
+    _Bool       p101_single_result_;
+    size_t      used;
+    bool        hex;
+    const char *escape;
 
     if(*cursor->current++ != '"')
     {
@@ -550,7 +715,8 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
                     char digit;
 
                     digit = *cursor->current++;
-                    if(!is_hex_digit(digit))
+                    hex   = is_hex_digit(digit);
+                    if(!hex)
                     {
                         p101_single_result_ = (_Bool)(false);
                         goto p101_single_exit_;
@@ -558,10 +724,14 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
                 }
                 ch = '?';
             }
-            else if(strchr("\"\\/bfnrt", (int)ch) == NULL)
+            else
             {
-                p101_single_result_ = (_Bool)(false);
-                goto p101_single_exit_;
+                escape = strchr("\"\\/bfnrt", (int)ch);
+                if(escape == NULL)
+                {
+                    p101_single_result_ = (_Bool)(false);
+                    goto p101_single_exit_;
+                }
             }
         }
         else if(ch < JSON_CONTROL_LIMIT)
@@ -630,14 +800,18 @@ p101_single_exit_:
 static bool parse_boolean(struct json_cursor *cursor, bool *value)
 {
     _Bool p101_single_result_;
-    if(strncmp(cursor->current, "true", JSON_TRUE_LENGTH) == 0)
+    int   comparison;
+
+    comparison = strncmp(cursor->current, "true", JSON_TRUE_LENGTH);
+    if(comparison == 0)
     {
         cursor->current += JSON_TRUE_LENGTH;
         *value              = true;
         p101_single_result_ = (_Bool)(true);
         goto p101_single_exit_;
     }
-    if(strncmp(cursor->current, "false", JSON_FALSE_LENGTH) == 0)
+    comparison = strncmp(cursor->current, "false", JSON_FALSE_LENGTH);
+    if(comparison == 0)
     {
         cursor->current += JSON_FALSE_LENGTH;
         *value              = false;
@@ -654,6 +828,8 @@ p101_single_exit_:
 static bool skip_value(struct json_cursor *cursor, size_t depth)    // NOLINT(misc-no-recursion)
 {
     _Bool p101_single_result_;
+    int   comparison;
+
     if(depth >= JSON_MAX_DEPTH)
     {
         p101_single_result_ = (_Bool)(false);
@@ -662,31 +838,37 @@ static bool skip_value(struct json_cursor *cursor, size_t depth)    // NOLINT(mi
     skip_space(cursor);
     if(*cursor->current == '"')
     {
-        p101_single_result_ = (parse_string(cursor, NULL, 0U));
+        p101_single_result_ = parse_string(cursor, NULL, 0U);
         goto p101_single_exit_;
     }
     if(*cursor->current == '{')
     {
-        p101_single_result_ = (skip_object(cursor, depth + 1U));
+        p101_single_result_ = skip_object(cursor, depth + 1U);
         goto p101_single_exit_;
     }
     if(*cursor->current == '[')
     {
-        p101_single_result_ = (skip_array(cursor, depth + 1U));
+        p101_single_result_ = skip_array(cursor, depth + 1U);
         goto p101_single_exit_;
     }
     if((*cursor->current >= '0' && *cursor->current <= '9') || *cursor->current == '-')
     {
-        p101_single_result_ = (skip_number(cursor));
+        p101_single_result_ = skip_number(cursor);
         goto p101_single_exit_;
     }
-    if(strncmp(cursor->current, "true", JSON_TRUE_LENGTH) == 0 || strncmp(cursor->current, "null", JSON_TRUE_LENGTH) == 0)
+    comparison = strncmp(cursor->current, "true", JSON_TRUE_LENGTH);
+    if(comparison != 0)
+    {
+        comparison = strncmp(cursor->current, "null", JSON_TRUE_LENGTH);
+    }
+    if(comparison == 0)
     {
         cursor->current += JSON_TRUE_LENGTH;
         p101_single_result_ = (_Bool)(true);
         goto p101_single_exit_;
     }
-    if(strncmp(cursor->current, "false", JSON_FALSE_LENGTH) == 0)
+    comparison = strncmp(cursor->current, "false", JSON_FALSE_LENGTH);
+    if(comparison == 0)
     {
         cursor->current += JSON_FALSE_LENGTH;
         p101_single_result_ = (_Bool)(true);
@@ -703,6 +885,7 @@ static bool skip_number(struct json_cursor *cursor)
 {
     _Bool       p101_single_result_;
     const char *current;
+    bool        decimal;
 
     current = cursor->current;
     if(*current == '-')
@@ -712,7 +895,8 @@ static bool skip_number(struct json_cursor *cursor)
     if(*current == '0')
     {
         current++;
-        if(is_decimal_digit(*current))
+        decimal = is_decimal_digit(*current);
+        if(decimal)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -772,6 +956,7 @@ static bool skip_object(struct json_cursor *cursor, size_t depth)    // NOLINT(m
 {
     _Bool p101_single_result_;
     bool  first;
+    bool  parsed;
 
     cursor->current++;
     first = true;
@@ -787,7 +972,8 @@ static bool skip_object(struct json_cursor *cursor, size_t depth)    // NOLINT(m
         }
         first = false;
         skip_space(cursor);
-        if(!parse_string(cursor, key, sizeof(key)))
+        parsed = parse_string(cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -798,7 +984,8 @@ static bool skip_object(struct json_cursor *cursor, size_t depth)    // NOLINT(m
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
         }
-        if(!skip_value(cursor, depth))
+        parsed = skip_value(cursor, depth);
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -817,7 +1004,7 @@ static bool skip_array(struct json_cursor *cursor, size_t depth)    // NOLINT(mi
 {
     _Bool p101_single_result_;
     bool  first;
-
+    bool  skipped;
     cursor->current++;
     first = true;
     skip_space(cursor);
@@ -828,8 +1015,9 @@ static bool skip_array(struct json_cursor *cursor, size_t depth)    // NOLINT(mi
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
         }
-        first = false;
-        if(!skip_value(cursor, depth))
+        first   = false;
+        skipped = skip_value(cursor, depth);
+        if(!skipped)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -875,6 +1063,8 @@ static bool find_top_level_size(const char *text, const char *wanted, size_t *va
     struct json_cursor cursor;
     bool               first;
     bool               found;
+    bool               parsed;
+    int                comparison;
 
     cursor.current = text;
     first          = true;
@@ -902,7 +1092,8 @@ static bool find_top_level_size(const char *text, const char *wanted, size_t *va
         }
         first = false;
         skip_space(&cursor);
-        if(!parse_string(&cursor, key, sizeof(key)))
+        parsed = parse_string(&cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -914,19 +1105,29 @@ static bool find_top_level_size(const char *text, const char *wanted, size_t *va
             goto p101_single_exit_;
         }
         skip_space(&cursor);
-        if(strcmp(key, wanted) == 0)
+        comparison = strcmp(key, wanted);
+        if(comparison == 0)
         {
-            if(found || !parse_size(&cursor, value))
+            parsed = false;
+            if(!found)
+            {
+                parsed = parse_size(&cursor, value);
+            }
+            if(!parsed)
             {
                 p101_single_result_ = (_Bool)(false);
                 goto p101_single_exit_;
             }
             found = true;
         }
-        else if(!skip_value(&cursor, 0U))
+        else
         {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
+            parsed = skip_value(&cursor, 0U);
+            if(!parsed)
+            {
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
+            }
         }
     }
     skip_space(&cursor);
@@ -942,6 +1143,8 @@ static bool parse_log_health(struct json_cursor *cursor, bool *complete)
     _Bool p101_single_result_;
     bool  first;
     bool  found;
+    bool  parsed;
+    int   comparison;
 
     if(*cursor->current++ != '{')
     {
@@ -968,7 +1171,8 @@ static bool parse_log_health(struct json_cursor *cursor, bool *complete)
         }
         first = false;
         skip_space(cursor);
-        if(!parse_string(cursor, key, sizeof(key)))
+        parsed = parse_string(cursor, key, sizeof(key));
+        if(!parsed)
         {
             p101_single_result_ = (_Bool)(false);
             goto p101_single_exit_;
@@ -980,19 +1184,29 @@ static bool parse_log_health(struct json_cursor *cursor, bool *complete)
             goto p101_single_exit_;
         }
         skip_space(cursor);
-        if(strcmp(key, "complete") == 0)
+        comparison = strcmp(key, "complete");
+        if(comparison == 0)
         {
-            if(found || !parse_boolean(cursor, complete))
+            parsed = false;
+            if(!found)
+            {
+                parsed = parse_boolean(cursor, complete);
+            }
+            if(!parsed)
             {
                 p101_single_result_ = (_Bool)(false);
                 goto p101_single_exit_;
             }
             found = true;
         }
-        else if(!skip_value(cursor, 1U))
+        else
         {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
+            parsed = skip_value(cursor, 1U);
+            if(!parsed)
+            {
+                p101_single_result_ = (_Bool)(false);
+                goto p101_single_exit_;
+            }
         }
     }
 

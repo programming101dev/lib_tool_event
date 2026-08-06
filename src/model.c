@@ -66,42 +66,59 @@ static int model_allocation_should_fail(void)
 
 static void *model_allocate(size_t size)
 {
+    void *p101_single_result_;
 #ifdef P101_TOOL_EVENT_TESTING
     if(model_allocation_should_fail() != 0)
     {
         return NULL;
     }
 #endif
-    return malloc(size);
+    p101_single_result_ = malloc(size);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void *model_callocate(size_t count, size_t size)
 {
+    void *p101_single_result_;
 #ifdef P101_TOOL_EVENT_TESTING
     if(model_allocation_should_fail() != 0)
     {
         return NULL;
     }
 #endif
-    return calloc(count, size);
+    p101_single_result_ = calloc(count, size);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static void *model_reallocate(void *memory, size_t size)
 {
+    void *p101_single_result_;
 #ifdef P101_TOOL_EVENT_TESTING
     if(model_allocation_should_fail() != 0)
     {
         return NULL;
     }
 #endif
-    return realloc(memory, size);
+    p101_single_result_ = realloc(memory, size);
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 struct p101_tool_model *p101_tool_model_create(struct p101_error *err)
 {
     struct p101_tool_model *model;
+    void                   *storage;
 
-    model = (struct p101_tool_model *)model_callocate(1U, sizeof(*model));
+    storage = model_callocate(1U, sizeof(*model));
+    model   = (struct p101_tool_model *)storage;
     if(model == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
@@ -113,7 +130,7 @@ void p101_tool_model_destroy(struct p101_tool_model **model)
 {
     if(model == NULL || *model == NULL)
     {
-        return;
+        goto p101_single_exit_;
     }
     for(size_t index = 0U; index < (*model)->node_count; index++)
     {
@@ -125,14 +142,25 @@ void p101_tool_model_destroy(struct p101_tool_model **model)
     p101_tool_event_lifecycle_destroy(&(*model)->lifecycle);
     free(*model);
     *model = NULL;
+
+p101_single_exit_:
+    return;
 }
 
 int p101_tool_model_ingest(struct p101_error *err, struct p101_tool_model *model, const struct p101_tool_event_record *record)
 {
     int                                p101_single_result_;
     struct p101_tool_model_owned_node *node;
+    size_t                             run_id_length;
+    int                                run_id_comparison;
+    int                                operation_status;
 
-    if(model == NULL || record == NULL || model->finished != 0 || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || strlen(record->run_id) > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
+    run_id_length = 0U;
+    if(record != NULL && record->run_id != NULL)
+    {
+        run_id_length = strlen(record->run_id);
+    }
+    if(model == NULL || record == NULL || model->finished != 0 || record->version != P101_TOOL_EVENT_LOG_VERSION || record->run_id == NULL || record->run_id[0] == '\0' || run_id_length > P101_TOOL_EVENT_RUN_ID_MAX_BYTES)
     {
         P101_ERROR_RAISE_ERRNO(err, EINVAL);
         p101_single_result_ = -1;
@@ -147,18 +175,23 @@ int p101_tool_model_ingest(struct p101_error *err, struct p101_tool_model *model
             goto p101_single_exit_;
         }
     }
-    else if(strcmp(model->run_id, record->run_id) != 0)
+    else
     {
-        P101_ERROR_RAISE_ERRNO(err, EINVAL);
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        run_id_comparison = strcmp(model->run_id, record->run_id);
+        if(run_id_comparison != 0)
+        {
+            P101_ERROR_RAISE_ERRNO(err, EINVAL);
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
     if(record->record_kind == P101_TOOL_EVENT_RECORD_COMPLETE)
     {
         p101_single_result_ = 0;
         goto p101_single_exit_;
     }
-    if(reserve_nodes(err, model) != 0)
+    operation_status = reserve_nodes(err, model);
+    if(operation_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -166,7 +199,8 @@ int p101_tool_model_ingest(struct p101_error *err, struct p101_tool_model *model
     node = &model->nodes[model->node_count];
     memset(node, 0, sizeof(*node));
     copy_record(node, record);
-    if(copy_record_text(err, node, record) != 0)
+    operation_status = copy_record_text(err, node, record);
+    if(operation_status != 0)
     {
         free_node(node);
         p101_single_result_ = -1;
@@ -185,6 +219,8 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
     int     p101_single_result_;
     size_t *matched_exit;
     int     result;
+    int     operation_status;
+    void   *storage;
 
     if(model == NULL)
     {
@@ -207,7 +243,8 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
     result       = -1;
     if(model->node_count > 0U)
     {
-        matched_exit = (size_t *)model_allocate(model->node_count * sizeof(*matched_exit));
+        storage      = model_allocate(model->node_count * sizeof(*matched_exit));
+        matched_exit = (size_t *)storage;
         if(matched_exit == NULL)
         {
             P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
@@ -218,7 +255,16 @@ int p101_tool_model_finish(struct p101_error *err, struct p101_tool_model *model
             matched_exit[index] = SIZE_MAX;
         }
     }
-    if(build_call_edges(err, model, matched_exit) != 0 || build_resource_edges(err, model, matched_exit) != 0 || build_lifecycle(err, model) != 0)
+    operation_status = build_call_edges(err, model, matched_exit);
+    if(operation_status == 0)
+    {
+        operation_status = build_resource_edges(err, model, matched_exit);
+    }
+    if(operation_status == 0)
+    {
+        operation_status = build_lifecycle(err, model);
+    }
+    if(operation_status != 0)
     {
         model->edge_count = 0U;
         goto done;
@@ -248,6 +294,7 @@ static int build_lifecycle(struct p101_error *err, struct p101_tool_model *model
     {
         const struct p101_tool_model_owned_node *node;
         struct p101_tool_event_record            record;
+        int                                      operation_status;
 
         node = &model->nodes[index];
         if(node->value.domain != P101_TOOL_MODEL_NODE_RESOURCE)
@@ -259,18 +306,24 @@ static int build_lifecycle(struct p101_error *err, struct p101_tool_model *model
             continue;
         }
         record_from_node(node, &record);
-        if(p101_tool_event_lifecycle_ingest(err, model->lifecycle, &record) != 0)
+        operation_status = p101_tool_event_lifecycle_ingest(err, model->lifecycle, &record);
+        if(operation_status != 0)
         {
             p101_tool_event_lifecycle_destroy(&model->lifecycle);
             p101_single_result_ = -1;
             goto p101_single_exit_;
         }
     }
-    if(p101_tool_event_lifecycle_finish(err, model->lifecycle) != 0)
     {
-        p101_tool_event_lifecycle_destroy(&model->lifecycle);
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
+        int operation_status;
+
+        operation_status = p101_tool_event_lifecycle_finish(err, model->lifecycle);
+        if(operation_status != 0)
+        {
+            p101_tool_event_lifecycle_destroy(&model->lifecycle);
+            p101_single_result_ = -1;
+            goto p101_single_exit_;
+        }
     }
     p101_single_result_ = 0;
     goto p101_single_exit_;
@@ -364,10 +417,12 @@ static char *copy_text(struct p101_error *err, const char *text)
     const char *source;
     char       *copy;
     size_t      length;
+    void       *storage;
 
-    source = text == NULL ? "" : text;
-    length = strlen(source);
-    copy   = (char *)model_allocate(length + 1U);
+    source  = text == NULL ? "" : text;
+    length  = strlen(source);
+    storage = model_allocate(length + 1U);
+    copy    = (char *)storage;
     if(copy == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
@@ -387,6 +442,7 @@ static int reserve_nodes(struct p101_error *err, struct p101_tool_model *model)
     int                                p101_single_result_;
     struct p101_tool_model_owned_node *nodes;
     size_t                             capacity;
+    void                              *storage;
 
     if(model->node_count < model->node_capacity)
     {
@@ -403,7 +459,8 @@ static int reserve_nodes(struct p101_error *err, struct p101_tool_model *model)
     }
     // GCOVR_EXCL_STOP
     capacity = model->node_capacity == 0U ? INITIAL_CAPACITY : model->node_capacity * 2U;
-    nodes    = (struct p101_tool_model_owned_node *)model_reallocate(model->nodes, capacity * sizeof(*nodes));
+    storage  = model_reallocate(model->nodes, capacity * sizeof(*nodes));
+    nodes    = (struct p101_tool_model_owned_node *)storage;
     if(nodes == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
@@ -424,6 +481,7 @@ static int reserve_edges(struct p101_error *err, struct p101_tool_model *model)
     int                          p101_single_result_;
     struct p101_tool_model_edge *edges;
     size_t                       capacity;
+    void                        *storage;
 
     if(model->edge_count < model->edge_capacity)
     {
@@ -440,7 +498,8 @@ static int reserve_edges(struct p101_error *err, struct p101_tool_model *model)
     }
     // GCOVR_EXCL_STOP
     capacity = model->edge_capacity == 0U ? INITIAL_CAPACITY : model->edge_capacity * 2U;
-    edges    = (struct p101_tool_model_edge *)model_reallocate(model->edges, capacity * sizeof(*edges));
+    storage  = model_reallocate(model->edges, capacity * sizeof(*edges));
+    edges    = (struct p101_tool_model_edge *)storage;
     if(edges == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, errno == 0 ? ENOMEM : errno);
@@ -459,7 +518,10 @@ p101_single_exit_:
 static int add_edge(struct p101_error *err, struct p101_tool_model *model, p101_tool_model_edge_kind kind, size_t from, size_t to)
 {
     int p101_single_result_;
-    if(reserve_edges(err, model) != 0)
+    int reserve_status;
+
+    reserve_status = reserve_edges(err, model);
+    if(reserve_status != 0)
     {
         p101_single_result_ = -1;
         goto p101_single_exit_;
@@ -557,7 +619,7 @@ static int same_context(const struct p101_tool_model_node *left, const struct p1
      * already has the same run identity. Rechecking it here added an
      * unreachable branch without strengthening the causal match.
      */
-    return left->pid == right->pid && left->context_id == right->context_id;
+    return (left->pid == right->pid && left->context_id == right->context_id) ? 1 : 0;
 }
 
 static size_t find_active_enter(const struct p101_tool_model *model, const size_t *matched_exit, size_t node_index, int require_name)
@@ -570,11 +632,18 @@ static size_t find_active_enter(const struct p101_tool_model *model, const size_
     {
         size_t                             candidate_index;
         const struct p101_tool_model_node *candidate;
+        int                                context_matches;
+        int                                name_comparison;
 
         candidate_index = cursor - 1U;
         candidate       = &model->nodes[candidate_index].value;
-        if(candidate->record_kind == P101_TOOL_EVENT_RECORD_CALL && candidate->call_kind == P101_TOOL_EVENT_CALL_ENTER && matched_exit[candidate_index] == SIZE_MAX && same_context(candidate, current) != 0 &&
-           (require_name == 0 || strcmp(candidate->call_name, current->call_name) == 0))
+        context_matches = same_context(candidate, current);
+        name_comparison = 0;
+        if(require_name != 0)
+        {
+            name_comparison = strcmp(candidate->call_name, current->call_name);
+        }
+        if(candidate->record_kind == P101_TOOL_EVENT_RECORD_CALL && candidate->call_kind == P101_TOOL_EVENT_CALL_ENTER && matched_exit[candidate_index] == SIZE_MAX && context_matches != 0 && (require_name == 0 || name_comparison == 0))
         {
             p101_single_result_ = candidate_index;
             goto p101_single_exit_;
@@ -598,9 +667,11 @@ static size_t find_enclosing_call(const struct p101_tool_model *model, const siz
     {
         const struct p101_tool_model_node *enter;
         size_t                             exit_index;
+        int                                context_matches;
 
-        enter = &model->nodes[index].value;
-        if(enter->record_kind != P101_TOOL_EVENT_RECORD_CALL || enter->call_kind != P101_TOOL_EVENT_CALL_ENTER || same_context(enter, resource) == 0 || enter->sequence > resource->sequence)
+        enter           = &model->nodes[index].value;
+        context_matches = same_context(enter, resource);
+        if(enter->record_kind != P101_TOOL_EVENT_RECORD_CALL || enter->call_kind != P101_TOOL_EVENT_CALL_ENTER || context_matches == 0 || enter->sequence > resource->sequence)
         {
             continue;
         }
@@ -622,9 +693,11 @@ static size_t find_lifetime_end(const struct p101_tool_model *model, size_t birt
     size_t                             p101_single_result_;
     const struct p101_tool_model_node *birth;
     size_t                             match;
+    int                                is_birth;
 
-    birth = &model->nodes[birth_index].value;
-    if(is_lifetime_birth(birth) == 0)
+    birth    = &model->nodes[birth_index].value;
+    is_birth = is_lifetime_birth(birth);
+    if(is_birth == 0)
     {
         p101_single_result_ = SIZE_MAX;
         goto p101_single_exit_;
@@ -633,9 +706,11 @@ static size_t find_lifetime_end(const struct p101_tool_model *model, size_t birt
     for(size_t index = 0U; index < model->node_count; index++)
     {
         const struct p101_tool_model_node *death;
+        int                                matches;
 
-        death = &model->nodes[index].value;
-        if(death->sequence > birth->sequence && death->pid == birth->pid && lifetime_matches(birth, death) != 0 && (match == SIZE_MAX || death->sequence < model->nodes[match].value.sequence))
+        death   = &model->nodes[index].value;
+        matches = lifetime_matches(birth, death);
+        if(death->sequence > birth->sequence && death->pid == birth->pid && matches != 0 && (match == SIZE_MAX || death->sequence < model->nodes[match].value.sequence))
         {
             match = index;
         }
@@ -650,6 +725,7 @@ p101_single_exit_:
 static int is_lifetime_birth(const struct p101_tool_model_node *node)
 {
     int p101_single_result_;
+    int null_pointer;
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
         p101_single_result_ = node->fd_kind == P101_TOOL_EVENT_FD_OPEN;
@@ -657,7 +733,8 @@ static int is_lifetime_birth(const struct p101_tool_model_node *node)
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
-        p101_single_result_ = node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && pointer_is_null(node->new_ptr) == 0);
+        null_pointer        = pointer_is_null(node->new_ptr);
+        p101_single_result_ = node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && null_pointer == 0);
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE)
@@ -676,6 +753,8 @@ static int lifetime_matches(const struct p101_tool_model_node *birth, const stru
 {
     int         p101_single_result_;
     const char *birth_id;
+    int         class_comparison;
+    int         id_comparison;
 
     if(birth->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
@@ -684,15 +763,16 @@ static int lifetime_matches(const struct p101_tool_model_node *birth, const stru
     }
     if(birth->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
-        birth_id = birth->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC ? birth->new_ptr : birth->ptr;
-        p101_single_result_ =
-            (death->record_kind == P101_TOOL_EVENT_RECORD_ALLOC && ((death->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE && strcmp(death->ptr, birth_id) == 0) || (death->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && strcmp(death->ptr, birth_id) == 0)));
+        birth_id            = birth->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC ? birth->new_ptr : birth->ptr;
+        id_comparison       = strcmp(death->ptr, birth_id);
+        p101_single_result_ = death->record_kind == P101_TOOL_EVENT_RECORD_ALLOC && (death->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE || death->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC) && id_comparison == 0;
         goto p101_single_exit_;
     }
     birth_id            = birth->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE ? birth->resource_id : birth->related_id;
-    p101_single_result_ = (death->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE && strcmp(death->resource_class, birth->resource_class) == 0 &&
-                           ((death->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE && strcmp(death->resource_id, birth_id) == 0) ||
-                            ((death->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE || death->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER) && strcmp(death->resource_id, birth_id) == 0)));
+    class_comparison    = strcmp(death->resource_class, birth->resource_class);
+    id_comparison       = strcmp(death->resource_id, birth_id);
+    p101_single_result_ = death->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE && class_comparison == 0 &&
+                          (death->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || death->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE || death->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER) && id_comparison == 0;
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -701,7 +781,28 @@ p101_single_exit_:
 
 static int pointer_is_null(const char *text)
 {
-    return text[0] == '\0' || strcmp(text, "-") == 0 || strcmp(text, "0") == 0 || strcmp(text, "0x0") == 0 || strcmp(text, "(nil)") == 0 || strcmp(text, "NULL") == 0;
+    int p101_single_result_;
+    int comparison;
+
+    p101_single_result_ = text[0] == '\0';
+    if(p101_single_result_ == 0)
+    {
+        static const char *const null_spellings[] = {"-", "0", "0x0", "(nil)", "NULL"};
+
+        for(size_t index = 0U; index < sizeof(null_spellings) / sizeof(null_spellings[0]); index++)
+        {
+            comparison = strcmp(text, null_spellings[index]);
+            if(comparison == 0)
+            {
+                p101_single_result_ = 1;
+                break;
+            }
+        }
+    }
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 static int build_call_edges(struct p101_error *err, struct p101_tool_model *model, size_t *matched_exit)
@@ -719,9 +820,15 @@ static int build_call_edges(struct p101_error *err, struct p101_tool_model *mode
         if(node->call_kind == P101_TOOL_EVENT_CALL_ENTER)
         {
             size_t parent;
+            int    edge_status;
 
-            parent = find_active_enter(model, matched_exit, index, 0);
-            if(parent != SIZE_MAX && add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_PARENT, parent, index) != 0)
+            parent      = find_active_enter(model, matched_exit, index, 0);
+            edge_status = 0;
+            if(parent != SIZE_MAX)
+            {
+                edge_status = add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_PARENT, parent, index);
+            }
+            if(edge_status != 0)
             {
                 p101_single_result_ = -1;
                 goto p101_single_exit_;    // GCOVR_EXCL_LINE -- reserve_edges failure is injected at its owning boundary.
@@ -730,12 +837,14 @@ static int build_call_edges(struct p101_error *err, struct p101_tool_model *mode
         else
         {
             size_t enter;
+            int    edge_status;
 
             enter = find_active_enter(model, matched_exit, index, 1);
             if(enter != SIZE_MAX)
             {
                 matched_exit[enter] = index;
-                if(add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_RETURN, enter, index) != 0)
+                edge_status         = add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_RETURN, enter, index);
+                if(edge_status != 0)
                 {
                     p101_single_result_ = -1;
                     goto p101_single_exit_;    // GCOVR_EXCL_LINE -- reserve_edges failure is injected at its owning boundary.
@@ -758,20 +867,31 @@ static int build_resource_edges(struct p101_error *err, struct p101_tool_model *
         const struct p101_tool_model_node *node;
         size_t                             call;
         size_t                             death;
+        int                                edge_status;
 
         node = &model->nodes[index].value;
         if(node->domain != P101_TOOL_MODEL_NODE_RESOURCE)
         {
             continue;
         }
-        call = find_enclosing_call(model, matched_exit, index);
-        if(call != SIZE_MAX && add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_CAUSED_EVENT, call, index) != 0)
+        call        = find_enclosing_call(model, matched_exit, index);
+        edge_status = 0;
+        if(call != SIZE_MAX)
+        {
+            edge_status = add_edge(err, model, P101_TOOL_MODEL_EDGE_CALL_CAUSED_EVENT, call, index);
+        }
+        if(edge_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;    // GCOVR_EXCL_LINE -- reserve_edges failure is injected at its owning boundary.
         }
-        death = find_lifetime_end(model, index);
-        if(death != SIZE_MAX && add_edge(err, model, P101_TOOL_MODEL_EDGE_RESOURCE_LIFETIME, index, death) != 0)
+        death       = find_lifetime_end(model, index);
+        edge_status = 0;
+        if(death != SIZE_MAX)
+        {
+            edge_status = add_edge(err, model, P101_TOOL_MODEL_EDGE_RESOURCE_LIFETIME, index, death);
+        }
+        if(edge_status != 0)
         {
             p101_single_result_ = -1;
             goto p101_single_exit_;    // GCOVR_EXCL_LINE -- reserve_edges failure is injected at its owning boundary.
@@ -780,7 +900,12 @@ static int build_resource_edges(struct p101_error *err, struct p101_tool_model *
         {
             for(size_t child = 0U; child < model->node_count; child++)
             {
-                if(model->nodes[child].value.pid == node->child_pid && add_edge(err, model, P101_TOOL_MODEL_EDGE_PROCESS_CHILD_EVENT, index, child) != 0)
+                edge_status = 0;
+                if(model->nodes[child].value.pid == node->child_pid)
+                {
+                    edge_status = add_edge(err, model, P101_TOOL_MODEL_EDGE_PROCESS_CHILD_EVENT, index, child);
+                }
+                if(edge_status != 0)
                 {
                     p101_single_result_ = -1;
                     goto p101_single_exit_;    // GCOVR_EXCL_LINE -- reserve_edges failure is injected at its owning boundary.

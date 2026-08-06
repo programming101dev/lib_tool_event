@@ -1,89 +1,79 @@
 # lib_tool_event sits below lib_env and the wrapper libraries in the dependency
 # graph. It must parse and serialize the protocol without calling back through
 # the observation layer it serves.
-src/event.c:*:ferror
-src/event.c:*:va_end
-src/event.c:*:va_start
-src/event.c:append_format:vsnprintf
-src/event.c:p101_tool_event_write:flockfile
-src/event.c:p101_tool_event_write:fileno
-src/event.c:*:fflush
-src/event.c:*:fgetc
-src/event.c:p101_tool_event_stream_health_destroy:free
-src/event.c:find_or_add_producer:realloc
-src/event.c:p101_tool_event_write:funlockfile
-src/event.c:*:memset
-src/event.c:*:strcmp
-src/event.c:*:strlen
-src/event.c:*:strncmp
-src/event.c:*:strtol
-src/event.c:p101_tool_event_write:write
+src/event.c		c:@F@ferror
+src/event.c		c:@F@va_end
+src/event.c		c:@F@va_start
+src/event.c		c:@F@vsnprintf
+src/event.c		c:@F@flockfile
+src/event.c		c:@F@fileno
+src/event.c		c:@F@fflush
+src/event.c		c:@F@fgetc
+src/event.c		c:@F@free
+src/event.c		c:@F@realloc
+src/event.c		c:@F@funlockfile
+src/event.c		c:@F@memset
+src/event.c		c:@F@strcmp
+src/event.c		c:@F@strlen
+src/event.c		c:@F@strncmp
+src/event.c		c:@F@strtol
+src/event.c		c:@F@write
 # These copies occur after the run ID length has been validated. This protocol
 # library cannot call p101_snprintf because that wrapper depends on lib_env,
 # which in turn emits records through lib_tool_event.
-src/event.c:p101_tool_event_stream_health_observe:snprintf
-src/event.c:find_or_add_producer:snprintf
-src/lifecycle.c:*:free
-src/lifecycle.c:*:malloc
-src/lifecycle.c:*:memcpy
-src/lifecycle.c:*:memmove
-src/lifecycle.c:*:memset
-src/lifecycle.c:*:realloc
-src/lifecycle.c:format_fd_identifier:snprintf
-src/lifecycle.c:*:strcmp
-src/lifecycle.c:*:strlen
-src/model.c:*:calloc
-src/model.c:*:free
-src/model.c:*:malloc
-src/model.c:*:memcpy
-src/model.c:*:memset
-src/model.c:*:realloc
-src/model.c:*:strcmp
-src/model.c:*:strlen
-src/model_json.c:*:fflush
-src/model_json.c:*:fprintf
-src/model_json.c:*:fputc
-src/model_json.c:*:fputs
-src/model_cli.c:*:fclose
-src/model_cli.c:*:fopen
-src/model_cli.c:*:fprintf
-src/model_cli.c:*:fputs
-src/model_cli.c:*:memset
-src/model_cli.c:*:strcmp
-src/receipt.c:*:close
-src/receipt.c:*:calloc
-src/receipt.c:*:free
-src/receipt.c:*:fprintf
-src/receipt.c:*:fstat
-src/receipt.c:*:fputs
-src/receipt.c:*:malloc
-src/receipt.c:*:memset
-src/receipt.c:*:open
-src/receipt.c:*:read
-src/receipt.c:*:strcmp
-src/receipt.c:*:strlen
-src/receipt.c:*:strncmp
-src/receipt_cli.c:*:fprintf
-src/receipt_cli.c:*:printf
-src/receipt_cli.c:*:strcmp
-src/record.c:*:fprintf
-src/record.c:*:fputc
-src/record.c:*:fputs
-src/summary.c:find_top_level_size:strcmp
-src/summary.c:is_hex_digit:strchr
-src/summary.c:key_text:memcpy
-src/summary.c:key_text:strlen
-src/summary.c:copy_json_text:malloc
-src/summary.c:copy_json_text:memchr
-src/summary.c:copy_json_text:memcpy
-src/summary.c:p101_tool_event_parse_json_size_n:free
-src/summary.c:p101_tool_event_parse_policy_summary_json_n:free
-src/summary.c:p101_tool_event_parse_resource_summary_json_n:free
-src/summary.c:*:memset
-src/summary.c:p101_tool_event_parse_policy_summary_json:strcmp
-src/summary.c:p101_tool_event_parse_resource_summary_json:strcmp
-src/summary.c:parse_boolean:strncmp
-src/summary.c:parse_log_health:strcmp
-src/summary.c:parse_policy_summary:strcmp
-src/summary.c:parse_string:strchr
-src/summary.c:skip_value:strncmp
+src/event.c		c:@F@snprintf
+src/lifecycle.c		c:@F@free
+src/lifecycle.c		c:@F@malloc
+src/lifecycle.c		c:@F@memcpy
+src/lifecycle.c		c:@F@memmove
+src/lifecycle.c		c:@F@memset
+src/lifecycle.c		c:@F@realloc
+src/lifecycle.c		c:@F@snprintf
+src/lifecycle.c		c:@F@strcmp
+src/lifecycle.c		c:@F@strlen
+src/model.c		c:@F@calloc
+src/model.c		c:@F@free
+src/model.c		c:@F@malloc
+src/model.c		c:@F@memcpy
+src/model.c		c:@F@memset
+src/model.c		c:@F@realloc
+src/model.c		c:@F@strcmp
+src/model.c		c:@F@strlen
+src/model_json.c		c:@F@fflush
+src/model_json.c		c:@F@fprintf
+src/model_json.c		c:@F@fputc
+src/model_json.c		c:@F@fputs
+src/model_cli.c		c:@F@fclose
+src/model_cli.c		c:@F@fopen
+src/model_cli.c		c:@F@fprintf
+src/model_cli.c		c:@F@fputs
+src/model_cli.c		c:@F@memset
+src/model_cli.c		c:@F@strcmp
+src/receipt.c		c:@F@close
+src/receipt.c		c:@F@calloc
+src/receipt.c		c:@F@free
+src/receipt.c		c:@F@fprintf
+src/receipt.c		c:@F@fstat
+src/receipt.c		c:@F@fputs
+src/receipt.c		c:@F@malloc
+src/receipt.c		c:@F@memset
+src/receipt.c		c:@F@open
+src/receipt.c		c:@F@read
+src/receipt.c		c:@F@strcmp
+src/receipt.c		c:@F@strlen
+src/receipt.c		c:@F@strncmp
+src/receipt_cli.c		c:@F@fprintf
+src/receipt_cli.c		c:@F@printf
+src/receipt_cli.c		c:@F@strcmp
+src/record.c		c:@F@fprintf
+src/record.c		c:@F@fputc
+src/record.c		c:@F@fputs
+src/summary.c		c:@F@strcmp
+src/summary.c		c:@F@strchr
+src/summary.c		c:@F@memcpy
+src/summary.c		c:@F@strlen
+src/summary.c		c:@F@malloc
+src/summary.c		c:@F@memchr
+src/summary.c		c:@F@free
+src/summary.c		c:@F@memset
+src/summary.c		c:@F@strncmp

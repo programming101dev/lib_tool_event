@@ -19,6 +19,8 @@ enum
     EXPECTED_THREAD_LINES = WRITE_THREAD_COUNT * WRITES_PER_THREAD
 };
 
+static const char *const FINGERPRINT_FIXTURE = "fingerprint.txt";
+
 struct write_thread
 {
     FILE *stream;
@@ -628,14 +630,14 @@ static void test_file_fingerprint(void)
     struct p101_tool_event_fingerprint fingerprint;
 
     err = p101_error_create(false);
-    EXPECT(p101_tool_event_fingerprint_file(err, P101_TOOL_EVENT_FINGERPRINT_FIXTURE, P101_TOOL_EVENT_RECEIPT_DEFAULT_MAX_BYTES, P101_TOOL_EVENT_RECEIPT_DEFAULT_MAX_RECORDS, &fingerprint) == 0);
+    EXPECT(p101_tool_event_fingerprint_file(err, FINGERPRINT_FIXTURE, P101_TOOL_EVENT_RECEIPT_DEFAULT_MAX_BYTES, P101_TOOL_EVENT_RECEIPT_DEFAULT_MAX_RECORDS, &fingerprint) == 0);
     EXPECT(p101_error_has_no_error(err));
     EXPECT(fingerprint.bytes == 4U);
     EXPECT(fingerprint.records == 2U);
     EXPECT(fingerprint.final_newline != 0);
     EXPECT(fingerprint.fnv1a64 == UINT64_C(0x78ed6781f136a14e));
 
-    EXPECT(p101_tool_event_fingerprint_file(err, P101_TOOL_EVENT_FINGERPRINT_FIXTURE, 3U, 2U, &fingerprint) == -1);
+    EXPECT(p101_tool_event_fingerprint_file(err, FINGERPRINT_FIXTURE, 3U, 2U, &fingerprint) == -1);
     EXPECT(p101_error_is_errno(err, EFBIG));
     p101_error_destroy(err);
 }
