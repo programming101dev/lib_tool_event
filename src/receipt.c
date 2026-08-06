@@ -623,7 +623,7 @@ static uint64_t digest_u64(uint64_t hash, const char *label, uint64_t value)
 
 static uint64_t digest_size(uint64_t hash, const char *label, size_t value)
 {
-    hash = digest_u64(hash, label, (uint64_t)value);
+    hash = digest_u64(hash, label, value);
     return hash;
 }
 
