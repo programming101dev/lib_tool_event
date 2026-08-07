@@ -283,7 +283,15 @@ p101_single_exit_:
 
 static int build_lifecycle(struct p101_error *err, struct p101_tool_model *model)
 {
-    int p101_single_result_;
+    /*
+     * Every path below assigns this before the single exit, but GCC's
+     * analyzer loses that across the loop and the stack-scrubbing clone it
+     * builds for this function. Default it to failure so the claim cannot be
+     * made, and so a future path that forgets to assign reports an error
+     * rather than returning whatever was on the stack.
+     */
+    int p101_single_result_ = -1;
+
     model->lifecycle = p101_tool_event_lifecycle_create(err);
     if(model->lifecycle == NULL)
     {
