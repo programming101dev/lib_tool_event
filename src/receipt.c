@@ -14,8 +14,6 @@ enum
     FNV_WORD_BITS            = 32,
     DIGEST_HEX_LEN           = 16,
     DECIMAL_BASE             = 10,
-    HEXADECIMAL_BASE         = 16,
-    ASCII_CONTROL_LIMIT      = 32,
     BITS_PER_BYTE            = 8,
     JSON_UNICODE_HEX_DIGITS  = 4,
     RECEIPT_TOKEN_TEXT_SIZE  = 32,
@@ -58,7 +56,6 @@ static int      receipt_parse_boolean(const char **cursor, int *value);
 static int      receipt_parse_hex(const char **cursor, uint64_t *value);
 static int      receipt_parse_literal(const char **cursor, const char *literal);
 static int      receipt_parse_size(const char **cursor, size_t *value);
-static int      receipt_parse_string(const char **cursor, char *output, size_t output_size);
 static int      receipt_parse_document(const char *text, struct parsed_receipt *parsed);
 static int      receipt_put_json_string(FILE *stream, const char *value);
 static int      receipt_write_failed(struct p101_error *err);
@@ -194,134 +191,6 @@ static int receipt_parse_literal(const char **cursor, const char *literal)
     return result;
 }
 
-static int receipt_parse_string(const char **cursor, char *output, size_t output_size)
-{
-    int    p101_single_result_;
-    size_t remaining;
-    size_t unicode_remaining;
-    size_t used;
-    int    result;
-
-    if(cursor == NULL || output == NULL || output_size == 0U)
-    {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
-    }
-    if(*cursor == NULL)
-    {
-        p101_single_result_ = -1;
-        goto p101_single_exit_;
-    }
-    remaining = strlen(*cursor);
-    used      = 0U;
-    result    = -1;
-    // `strlen` above proves that byte zero is initialized when remaining is
-    // non-zero; CSA loses that fact across the short-circuit expression.
-    if(remaining == 0U || (*cursor)[0] != '"')    // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-    {
-        goto done;
-    }
-    (*cursor)++;
-    while(**cursor != '\0' && **cursor != '"')
-    {
-        unsigned char value = (unsigned char)*(*cursor)++;
-        int           escaped;
-
-        escaped = 0;
-        if(value == '\\')
-        {
-            escaped = 1;
-            value   = (unsigned char)*(*cursor)++;
-            if(value == '"' || value == '\\' || value == '/')
-            {
-                /* The decoded byte is already in value. */
-            }
-            else if(value == 'b')
-            {
-                value = '\b';
-            }
-            else if(value == 'f')
-            {
-                value = '\f';
-            }
-            else if(value == 'n')
-            {
-                value = '\n';
-            }
-            else if(value == 'r')
-            {
-                value = '\r';
-            }
-            else if(value == 't')
-            {
-                value = '\t';
-            }
-            else if(value == 'u')
-            {
-                unsigned char high;
-                unsigned char low;
-
-                unicode_remaining = strlen(*cursor);
-                if(unicode_remaining < JSON_UNICODE_HEX_DIGITS || (*cursor)[0] != '0' || (*cursor)[1] != '0')
-                {
-                    goto done;
-                }
-                high = (unsigned char)(*cursor)[2];
-                low  = (unsigned char)(*cursor)[3];
-                if(high >= '0' && high <= '9')
-                {
-                    high = (unsigned char)(high - '0');
-                }
-                else if(high >= 'a' && high <= 'f')
-                {
-                    high = (unsigned char)(high - 'a' + DECIMAL_BASE);
-                }
-                else
-                {
-                    goto done;
-                }
-                if(low >= '0' && low <= '9')
-                {
-                    low = (unsigned char)(low - '0');
-                }
-                else if(low >= 'a' && low <= 'f')
-                {
-                    low = (unsigned char)(low - 'a' + DECIMAL_BASE);
-                }
-                else
-                {
-                    goto done;
-                }
-                value = (unsigned char)((high * HEXADECIMAL_BASE) + low);
-                *cursor += JSON_UNICODE_HEX_DIGITS;
-            }
-            else
-            {
-                goto done;
-            }
-        }
-        if((value < ASCII_CONTROL_LIMIT && escaped == 0) || used + 1U >= output_size)
-        {
-            goto done;
-        }
-        output[used++] = (char)value;
-    }
-    if(**cursor != '"')
-    {
-        goto done;
-    }
-    (*cursor)++;
-    output[used] = '\0';
-    result       = 0;
-
-done:
-    p101_single_result_ = result;
-    goto p101_single_exit_;
-
-p101_single_exit_:
-    return p101_single_result_;
-}
-
 static int receipt_parse_size(const char **cursor, size_t *value)
 {
     size_t parsed = 0U;
@@ -432,35 +301,35 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
     } while(0)
 
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "{\"schema\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, schema, sizeof(schema)));
-    comparison = strcmp(schema, "p101-tool-run-receipt-v4");
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, schema, sizeof(schema)));
+    comparison = strcmp(schema, P101_TOOL_RUN_RECEIPT_SCHEMA_NAME);
     if(comparison != 0)
     {
         result = 1;
         goto done;
     }
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"tool\":{\"name\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_NAME], sizeof(parsed->text[RECEIPT_TOOL_NAME])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_TOOL_NAME], sizeof(parsed->text[RECEIPT_TOOL_NAME])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"version\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_TOOL_VERSION], sizeof(parsed->text[RECEIPT_TOOL_VERSION])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_TOOL_VERSION], sizeof(parsed->text[RECEIPT_TOOL_VERSION])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"input\":{\"schema\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_SCHEMA], sizeof(parsed->text[RECEIPT_INPUT_SCHEMA])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_INPUT_SCHEMA], sizeof(parsed->text[RECEIPT_INPUT_SCHEMA])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"identity\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_INPUT_IDENTITY], sizeof(parsed->text[RECEIPT_INPUT_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_INPUT_IDENTITY], sizeof(parsed->text[RECEIPT_INPUT_IDENTITY])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"policy\":{\"schema\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_SCHEMA], sizeof(parsed->text[RECEIPT_POLICY_SCHEMA])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_POLICY_SCHEMA], sizeof(parsed->text[RECEIPT_POLICY_SCHEMA])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"identity\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_POLICY_IDENTITY], sizeof(parsed->text[RECEIPT_POLICY_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_POLICY_IDENTITY], sizeof(parsed->text[RECEIPT_POLICY_IDENTITY])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"run_identity\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_RUN_IDENTITY], sizeof(parsed->text[RECEIPT_RUN_IDENTITY])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_RUN_IDENTITY], sizeof(parsed->text[RECEIPT_RUN_IDENTITY])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"outcome\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, outcome, sizeof(outcome)));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, outcome, sizeof(outcome)));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"failure\":{\"reason\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, failure, sizeof(failure)));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, failure, sizeof(failure)));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"stage\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_FAILED_STAGE], sizeof(parsed->text[RECEIPT_FAILED_STAGE])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_FAILED_STAGE], sizeof(parsed->text[RECEIPT_FAILED_STAGE])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"first_diagnostic\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_FIRST_DIAGNOSTIC], sizeof(parsed->text[RECEIPT_FIRST_DIAGNOSTIC])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_FIRST_DIAGNOSTIC], sizeof(parsed->text[RECEIPT_FIRST_DIAGNOSTIC])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "},\"checks\":{\"attempted\":"));
     REQUIRE_RECEIPT_PARSE(receipt_parse_size(&cursor, &parsed->receipt.checks_attempted));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"completed\":"));
@@ -518,7 +387,7 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
 
         parsed->fingerprint_present = 1;
         REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"fingerprint\":{\"algorithm\":"));
-        REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, algorithm, sizeof(algorithm)));
+        REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, algorithm, sizeof(algorithm)));
         comparison = strcmp(algorithm, "fnv1a64-change-detector");
         if(comparison != 0)
         {
@@ -537,7 +406,7 @@ static int receipt_parse_document(const char *text, struct parsed_receipt *parse
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, ",\"receipt_digest\":{\"algorithm\":\"fnv1a64-semantic-v1\",\"value\":\""));
     REQUIRE_RECEIPT_PARSE(receipt_parse_hex(&cursor, &parsed->claimed_digest));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "\"},\"does_not_prove\":"));
-    REQUIRE_RECEIPT_PARSE(receipt_parse_string(&cursor, parsed->text[RECEIPT_DOES_NOT_PROVE], sizeof(parsed->text[RECEIPT_DOES_NOT_PROVE])));
+    REQUIRE_RECEIPT_PARSE(p101_record_read_json_string(&cursor, parsed->text[RECEIPT_DOES_NOT_PROVE], sizeof(parsed->text[RECEIPT_DOES_NOT_PROVE])));
     REQUIRE_RECEIPT_PARSE(receipt_parse_literal(&cursor, "}\n"));
     if(*cursor != '\0')
     {
@@ -640,7 +509,7 @@ uint64_t p101_tool_run_receipt_digest(const struct p101_tool_run_receipt *receip
         p101_single_result_ = 0U;
         goto p101_single_exit_;
     }
-    hash = digest_text(FNV1A64_OFFSET, "schema", "p101-tool-run-receipt-v4");
+    hash = digest_text(FNV1A64_OFFSET, "schema", P101_TOOL_RUN_RECEIPT_SCHEMA_NAME);
     hash = digest_text(hash, "tool_name", receipt->tool_name);
     hash = digest_text(hash, "tool_version", receipt->tool_version);
     hash = digest_text(hash, "input_schema", receipt->input_schema);
@@ -1068,7 +937,7 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
 
     // GCOVR_EXCL_BR_START: test builds inject each writer phase immediately
     // above/below these calls; individual libc write sites are not portable.
-    REQUIRE_RECEIPT_WRITE(fputs("{\"schema\":\"p101-tool-run-receipt-v4\",\"tool\":{\"name\":", stream));
+    REQUIRE_RECEIPT_WRITE(fputs("{\"schema\":\"" P101_TOOL_RUN_RECEIPT_SCHEMA_NAME "\",\"tool\":{\"name\":", stream));
     REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->tool_name));
     REQUIRE_RECEIPT_WRITE(fputs(",\"version\":", stream));
     REQUIRE_RECEIPT_WRITE(receipt_put_json_string(stream, receipt->tool_version));

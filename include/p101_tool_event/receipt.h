@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/* Schema name written into, and required by, every run receipt document. */
+#define P101_TOOL_RUN_RECEIPT_SCHEMA_NAME "p101-tool-run-receipt-v4"
+
 #ifdef __cplusplus
 extern "C"
 {

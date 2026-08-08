@@ -1,6 +1,7 @@
 #include "model_internal.h"
 #include <errno.h>
 #include <p101_error/error.h>
+#include <p101_record/record.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,6 @@ static size_t find_enclosing_call(const struct p101_tool_model *model, const siz
 static size_t find_lifetime_end(const struct p101_tool_model *model, size_t birth_index);
 static int    is_lifetime_birth(const struct p101_tool_model_node *node);
 static int    lifetime_matches(const struct p101_tool_model_node *birth, const struct p101_tool_model_node *death);
-static int    pointer_is_null(const char *text);
 static int    build_call_edges(struct p101_error *err, struct p101_tool_model *model, size_t *matched_exit);
 static int    build_resource_edges(struct p101_error *err, struct p101_tool_model *model, const size_t *matched_exit);
 static int    build_lifecycle(struct p101_error *err, struct p101_tool_model *model);
@@ -732,8 +732,8 @@ p101_single_exit_:
 
 static int is_lifetime_birth(const struct p101_tool_model_node *node)
 {
-    int p101_single_result_;
-    int null_pointer;
+    int  p101_single_result_;
+    bool null_pointer;
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
         p101_single_result_ = node->fd_kind == P101_TOOL_EVENT_FD_OPEN;
@@ -741,8 +741,8 @@ static int is_lifetime_birth(const struct p101_tool_model_node *node)
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
-        null_pointer        = pointer_is_null(node->new_ptr);
-        p101_single_result_ = node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && null_pointer == 0);
+        null_pointer        = p101_record_pointer_is_null(node->new_ptr);
+        p101_single_result_ = node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && !null_pointer);
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE)
@@ -781,32 +781,6 @@ static int lifetime_matches(const struct p101_tool_model_node *birth, const stru
     id_comparison       = strcmp(death->resource_id, birth_id);
     p101_single_result_ = death->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE && class_comparison == 0 &&
                           (death->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE || death->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE || death->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER) && id_comparison == 0;
-    goto p101_single_exit_;
-
-p101_single_exit_:
-    return p101_single_result_;
-}
-
-static int pointer_is_null(const char *text)
-{
-    int p101_single_result_;
-    int comparison;
-
-    p101_single_result_ = text[0] == '\0';
-    if(p101_single_result_ == 0)
-    {
-        static const char *const null_spellings[] = {"-", "0", "0x0", "(nil)", "NULL"};
-
-        for(size_t index = 0U; index < sizeof(null_spellings) / sizeof(null_spellings[0]); index++)
-        {
-            comparison = strcmp(text, null_spellings[index]);
-            if(comparison == 0)
-            {
-                p101_single_result_ = 1;
-                break;
-            }
-        }
-    }
     goto p101_single_exit_;
 
 p101_single_exit_:

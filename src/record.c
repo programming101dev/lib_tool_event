@@ -2,12 +2,18 @@
 #include <p101_record/record.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <string.h>
 
 enum
 {
     NUMBER_BASE             = 10,
-    JSON_CONTROL_BYTE_LIMIT = 0x20U
+    JSON_CONTROL_BYTE_LIMIT = 0x20U,
+    JSON_UNICODE_HEX_DIGITS = 4,
+    HEXADECIMAL_BASE        = 16,
+    ASCII_DELETE            = 0x7F
 };
+
+static const char *const NULL_POINTER_SPELLINGS[] = {"-", "0", "0x0", "(nil)", "NULL"};
 
 #ifdef P101_TOOL_EVENT_TESTING
 static size_t test_write_failure_after = SIZE_MAX;
@@ -96,6 +102,38 @@ p101_single_exit_:
     return p101_single_result_;
 }
 
+const char *p101_record_escape_byte(unsigned char value)
+{
+    const char *escaped;
+
+    if(value == '\t')
+    {
+        escaped = "\\t";
+    }
+    else if(value == '\n')
+    {
+        escaped = "\\n";
+    }
+    else if(value == '\r')
+    {
+        escaped = "\\r";
+    }
+    else if(value == '\\')
+    {
+        escaped = "\\\\";
+    }
+    else if(value < ' ' || value == ASCII_DELETE)
+    {
+        escaped = "?";
+    }
+    else
+    {
+        escaped = NULL;
+    }
+
+    return escaped;
+}
+
 void p101_record_unescape_field(char *field)
 {
     char *read_cursor;
@@ -141,6 +179,166 @@ void p101_record_unescape_field(char *field)
 
 p101_single_exit_:
     return;
+}
+
+bool p101_record_pointer_is_null(const char *text)
+{
+    bool p101_single_result_;
+
+    p101_single_result_ = (text == NULL || text[0] == '\0') != 0;
+    if(!p101_single_result_)
+    {
+        for(size_t index = 0U; index < sizeof(NULL_POINTER_SPELLINGS) / sizeof(NULL_POINTER_SPELLINGS[0]); index++)
+        {
+            int comparison;
+
+            comparison = strcmp(text, NULL_POINTER_SPELLINGS[index]);
+            if(comparison == 0)
+            {
+                p101_single_result_ = true;
+                break;
+            }
+        }
+    }
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
+}
+
+int p101_record_read_json_string(const char **cursor, char *output, size_t output_size)
+{
+    int    p101_single_result_;
+    size_t unicode_remaining;
+    size_t used;
+    int    result;
+
+    if(cursor == NULL || (output != NULL && output_size == 0U))
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    if(*cursor == NULL)
+    {
+        p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    used   = 0U;
+    result = -1;
+    /* An empty string terminates here too: byte zero is then '\0'. */
+    if(**cursor != '"')
+    {
+        goto done;
+    }
+    (*cursor)++;
+    while(**cursor != '\0' && **cursor != '"')
+    {
+        unsigned char value = (unsigned char)*(*cursor)++;
+        int           escaped;
+
+        escaped = 0;
+        if(value == '\\')
+        {
+            escaped = 1;
+            value   = (unsigned char)*(*cursor)++;
+            if(value == '"' || value == '\\' || value == '/')
+            {
+                /* The decoded byte is already in value. */
+            }
+            else if(value == 'b')
+            {
+                value = '\b';
+            }
+            else if(value == 'f')
+            {
+                value = '\f';
+            }
+            else if(value == 'n')
+            {
+                value = '\n';
+            }
+            else if(value == 'r')
+            {
+                value = '\r';
+            }
+            else if(value == 't')
+            {
+                value = '\t';
+            }
+            else if(value == 'u')
+            {
+                unsigned char high;
+                unsigned char low;
+
+                unicode_remaining = strlen(*cursor);
+                if(unicode_remaining < JSON_UNICODE_HEX_DIGITS || (*cursor)[0] != '0' || (*cursor)[1] != '0')
+                {
+                    goto done;
+                }
+                high = (unsigned char)(*cursor)[2];
+                low  = (unsigned char)(*cursor)[3];
+                if(high >= '0' && high <= '9')
+                {
+                    high = (unsigned char)(high - '0');
+                }
+                else if(high >= 'a' && high <= 'f')
+                {
+                    high = (unsigned char)(high - 'a' + NUMBER_BASE);
+                }
+                else
+                {
+                    goto done;
+                }
+                if(low >= '0' && low <= '9')
+                {
+                    low = (unsigned char)(low - '0');
+                }
+                else if(low >= 'a' && low <= 'f')
+                {
+                    low = (unsigned char)(low - 'a' + NUMBER_BASE);
+                }
+                else
+                {
+                    goto done;
+                }
+                value = (unsigned char)((high * HEXADECIMAL_BASE) + low);
+                *cursor += JSON_UNICODE_HEX_DIGITS;
+            }
+            else
+            {
+                goto done;
+            }
+        }
+        if(value < JSON_CONTROL_BYTE_LIMIT && escaped == 0)
+        {
+            goto done;
+        }
+        if(output != NULL)
+        {
+            if(used + 1U >= output_size)
+            {
+                goto done;
+            }
+            output[used++] = (char)value;
+        }
+    }
+    if(**cursor != '"')
+    {
+        goto done;
+    }
+    (*cursor)++;
+    if(output != NULL)
+    {
+        output[used] = '\0';
+    }
+    result = 0;
+
+done:
+    p101_single_result_ = result;
+    goto p101_single_exit_;
+
+p101_single_exit_:
+    return p101_single_result_;
 }
 
 int p101_record_parse_size(const char *text, size_t *out)

@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <p101_record/record.h>
 #include <p101_tool_event/lifecycle.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -19,7 +20,10 @@ enum
 };
 
 /* Records own mutable views into parsed lines, so normalized literals use
- * arrays with compatible pointer types. They are never modified here. */
+ * arrays with compatible pointer types. They are never modified here. Keep
+ * the spellings in sync with P101_RESOURCE_CLASS_FD / _ALLOCATION in
+ * p101_env/resource_classes.h; lib_tool_event sits below lib_env in the
+ * layering and cannot include that header. */
 static char fd_resource_class[]         = "fd";            // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static char allocation_resource_class[] = "allocation";    // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
@@ -51,7 +55,6 @@ static int   ingest_allocation(struct p101_error *err, struct p101_tool_event_li
 static int   ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
 static int   ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record);
 static void  rollback_exec(struct p101_tool_event_lifecycle_model *model, long pid);
-static bool  pointer_is_null_text(const char *text);
 static void *lifecycle_allocate(size_t size);
 static void *lifecycle_reallocate(void *memory, size_t size);
 static int   format_fd_identifier(char *identifier, size_t size, int fd);
@@ -387,7 +390,7 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
 
     if(record->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC)
     {
-        pointer_is_null = pointer_is_null_text(record->ptr);
+        pointer_is_null = p101_record_pointer_is_null(record->ptr);
         if(pointer_is_null)
         {
             p101_single_result_ = 0;
@@ -400,7 +403,7 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
     }
     if(record->alloc_kind == P101_TOOL_EVENT_ALLOC_FREE)
     {
-        pointer_is_null = pointer_is_null_text(record->ptr);
+        pointer_is_null = p101_record_pointer_is_null(record->ptr);
         if(pointer_is_null)
         {
             p101_single_result_ = 0;
@@ -412,10 +415,10 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
         goto p101_single_exit_;
     }
 
-    pointer_is_null = pointer_is_null_text(record->ptr);
+    pointer_is_null = p101_record_pointer_is_null(record->ptr);
     if(pointer_is_null)
     {
-        new_pointer_is_null = pointer_is_null_text(record->new_ptr);
+        new_pointer_is_null = p101_record_pointer_is_null(record->new_ptr);
         if(new_pointer_is_null)
         {
             p101_single_result_ = 0;
@@ -434,7 +437,7 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
         normalized.resource_id   = record->ptr;
         entry                    = find_latest(model, record->pid, "allocation", record->ptr, false);
         result                   = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_BAD_REPLACE, &normalized, entry);
-        new_pointer_is_null      = pointer_is_null_text(record->new_ptr);
+        new_pointer_is_null      = p101_record_pointer_is_null(record->new_ptr);
         if(result != 0 || new_pointer_is_null)
         {
             p101_single_result_ = result;
@@ -445,7 +448,7 @@ static int ingest_allocation(struct p101_error *err, struct p101_tool_event_life
         p101_single_result_      = ingest_resource(err, model, &normalized);
         goto p101_single_exit_;
     }
-    new_pointer_is_null = pointer_is_null_text(record->new_ptr);
+    new_pointer_is_null = p101_record_pointer_is_null(record->new_ptr);
     if(new_pointer_is_null)
     {
         p101_single_result_ = 0;
@@ -502,7 +505,7 @@ static int ingest_fork(struct p101_error *err, struct p101_tool_event_lifecycle_
         int                                           operation_status;
 
         entry            = &model->entries[index];
-        class_comparison = strcmp(entry->resource_class, "fd");
+        class_comparison = strcmp(entry->resource_class, fd_resource_class);
         if(entry->pid != record->pid || !entry->live || class_comparison != 0)
         {
             continue;
@@ -554,37 +557,6 @@ p101_single_exit_:
     return p101_single_result_;
 }
 
-static bool pointer_is_null_text(const char *text)
-{
-    bool p101_single_result_;
-    int  comparison;
-
-    p101_single_result_ = false;
-    if(text == NULL || text[0] == '\0')
-    {
-        p101_single_result_ = true;
-    }
-    if(!p101_single_result_)
-    {
-        comparison          = strcmp(text, "-");
-        p101_single_result_ = comparison == 0;
-    }
-    if(!p101_single_result_)
-    {
-        comparison          = strcmp(text, "(nil)");
-        p101_single_result_ = comparison == 0;
-    }
-    if(!p101_single_result_)
-    {
-        comparison          = strcmp(text, "0x0");
-        p101_single_result_ = comparison == 0;
-    }
-    goto p101_single_exit_;
-
-p101_single_exit_:
-    return p101_single_result_;
-}
-
 static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_model *model, const struct p101_tool_event_record *record)
 {
     int                                     p101_single_result_;
@@ -600,7 +572,7 @@ static int ingest_exec(struct p101_error *err, struct p101_tool_event_lifecycle_
         p101_single_result_ = -1;
         goto p101_single_exit_;
     }
-    entry = find_latest(model, record->pid, "fd", identifier, true);
+    entry = find_latest(model, record->pid, fd_resource_class, identifier, true);
     if(entry == NULL)
     {
         p101_single_result_ = 0;

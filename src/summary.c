@@ -1,3 +1,4 @@
+#include <p101_record/record.h>
 #include <p101_tool_event/summary.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -5,13 +6,12 @@
 
 enum
 {
-    NUMBER_BASE        = 10,
-    JSON_MAX_DEPTH     = 64,
-    JSON_KEY_CAPACITY  = 96,
-    JSON_CONTROL_LIMIT = 32,
-    JSON_TRUE_LENGTH   = 4,
-    JSON_FALSE_LENGTH  = 5,
-    DECIMAL_MAX_DIGIT  = 9
+    NUMBER_BASE       = 10,
+    JSON_MAX_DEPTH    = 64,
+    JSON_KEY_CAPACITY = 96,
+    JSON_TRUE_LENGTH  = 4,
+    JSON_FALSE_LENGTH = 5,
+    DECIMAL_MAX_DIGIT = 9
 };
 
 struct json_cursor
@@ -32,22 +32,11 @@ static bool  find_top_level_size(const char *text, const char *wanted, size_t *v
 static bool  parse_log_health(struct json_cursor *cursor, bool *complete);
 static bool  parse_policy_summary(struct json_cursor *cursor, struct p101_tool_event_policy_summary *summary);
 static bool  is_decimal_digit(char value);
-static bool  is_hex_digit(char value);
 static char *copy_json_text(const char *text, size_t text_size);
 
 static bool is_decimal_digit(char value)
 {
     return (unsigned int)(unsigned char)(value - '0') <= DECIMAL_MAX_DIGIT;
-}
-
-static bool is_hex_digit(char value)
-{
-    bool        decimal;
-    const char *hex_digit;
-
-    decimal   = is_decimal_digit(value);
-    hex_digit = strchr("abcdefABCDEF", (int)value);
-    return (decimal || (hex_digit != NULL && value != '\0')) != 0;
 }
 
 static char *copy_json_text(const char *text, size_t text_size)
@@ -684,85 +673,11 @@ static void skip_space(struct json_cursor *cursor)
 
 static bool parse_string(struct json_cursor *cursor, char *output, size_t output_size)
 {
-    _Bool       p101_single_result_;
-    size_t      used;
-    bool        hex;
-    const char *escape;
+    int status;
 
-    if(*cursor->current++ != '"')
-    {
-        p101_single_result_ = (_Bool)(false);
-        goto p101_single_exit_;
-    }
-    used = 0U;
-    while(*cursor->current != '\0' && *cursor->current != '"')
-    {
-        unsigned char ch;
+    status = p101_record_read_json_string(&cursor->current, output, output_size);
 
-        ch = (unsigned char)*cursor->current++;
-        if(ch == '\\')
-        {
-            ch = (unsigned char)*cursor->current++;
-            if(ch == '\0')
-            {
-                p101_single_result_ = (_Bool)(false);
-                goto p101_single_exit_;
-            }
-            if(ch == 'u')
-            {
-                for(size_t index = 0U; index < 4U; index++)
-                {
-                    char digit;
-
-                    digit = *cursor->current++;
-                    hex   = is_hex_digit(digit);
-                    if(!hex)
-                    {
-                        p101_single_result_ = (_Bool)(false);
-                        goto p101_single_exit_;
-                    }
-                }
-                ch = '?';
-            }
-            else
-            {
-                escape = strchr("\"\\/bfnrt", (int)ch);
-                if(escape == NULL)
-                {
-                    p101_single_result_ = (_Bool)(false);
-                    goto p101_single_exit_;
-                }
-            }
-        }
-        else if(ch < JSON_CONTROL_LIMIT)
-        {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
-        }
-        if(output != NULL && used + 1U >= output_size)
-        {
-            p101_single_result_ = (_Bool)(false);
-            goto p101_single_exit_;
-        }
-        if(output != NULL)
-        {
-            output[used++] = (char)ch;
-        }
-    }
-    if(*cursor->current++ != '"')
-    {
-        p101_single_result_ = (_Bool)(false);
-        goto p101_single_exit_;
-    }
-    if(output != NULL)
-    {
-        output[used] = '\0';
-    }
-    p101_single_result_ = (_Bool)(true);
-    goto p101_single_exit_;
-
-p101_single_exit_:
-    return p101_single_result_;
+    return status == 0;
 }
 
 static bool parse_size(struct json_cursor *cursor, size_t *value)
