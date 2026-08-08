@@ -46,6 +46,7 @@ enum
 static int                          parse_long_field(const char *text, long min, long max, long *out);
 static int                          parse_optional_size_field(const char *text, size_t *out, int *available);
 static p101_tool_event_parse_status parse_metadata(char *fields[], size_t field_count, struct p101_tool_event_record *record, size_t *payload);
+static bool                         payload_arity_matches(size_t count, size_t payload, size_t fields_needed);
 static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record);
 static void                         unescape_record(struct p101_tool_event_record *record);
 
@@ -1283,6 +1284,30 @@ static const char *resource_kind_name(p101_tool_event_resource_kind kind)
     return names[kind];
 }
 
+/*
+ * Whether count fields leave exactly fields_needed of them after the metadata
+ * that ends at payload.
+ *
+ * Deliberately not "count == payload + fields_needed": size_t arithmetic wraps,
+ * so a payload of SIZE_MAX - 3 satisfies that for a count of 1, and every
+ * fields[payload + n] read in parse_payload then runs off the front of the
+ * array. Subtracting states the same arity rule and cannot wrap, and the
+ * count <= MAX_FIELDS term spells out what fields[] actually holds instead of
+ * trusting the caller to have filled it from the same bound.
+ */
+static bool payload_arity_matches(size_t count, size_t payload, size_t fields_needed)
+{
+    bool matches;
+
+    matches = false;
+    if(count <= (size_t)MAX_FIELDS && count >= fields_needed && payload == count - fields_needed)
+    {
+        matches = true;
+    }
+
+    return matches;
+}
+
 static p101_tool_event_parse_status parse_payload(const char *magic, char *fields[], size_t count, size_t payload, struct p101_tool_event_record *record)
 {
     p101_tool_event_parse_status p101_single_result_;
@@ -1303,7 +1328,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         size_t action_index;
         bool   action_found;
 
-        if(count != payload + FD_PAYLOAD_FIELDS)
+        if(!payload_arity_matches(count, payload, FD_PAYLOAD_FIELDS))
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1342,7 +1367,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         bool   action_found;
         int    null_comparison;
 
-        if(count != payload + ALLOC_PAYLOAD_FIELDS)
+        if(!payload_arity_matches(count, payload, ALLOC_PAYLOAD_FIELDS))
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1382,7 +1407,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         {
             parsed = parse_long_field(fields[payload + 1U], 0, INT_MAX, &value);
         }
-        if(count != payload + FORK_PAYLOAD_FIELDS || parsed == 0)
+        if(!payload_arity_matches(count, payload, FORK_PAYLOAD_FIELDS) || parsed == 0)
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1403,7 +1428,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         {
             parsed = parse_long_field(fields[payload + 1U], 0, INT_MAX, &value);
         }
-        if(count != payload + SPAWN_PAYLOAD_FIELDS || parsed == 0)
+        if(!payload_arity_matches(count, payload, SPAWN_PAYLOAD_FIELDS) || parsed == 0)
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1420,7 +1445,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
     if(magic_index == (size_t)P101_TOOL_EVENT_RECORD_EXEC)
     {
         parsed = parse_long_field(fields[payload], 0, EVENT_FD_MAX, &value);
-        if(count != payload + EXEC_PAYLOAD_FIELDS || parsed == 0)
+        if(!payload_arity_matches(count, payload, EXEC_PAYLOAD_FIELDS) || parsed == 0)
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1451,7 +1476,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
     if(magic_index == (size_t)P101_TOOL_EVENT_RECORD_EXEC_FAIL)
     {
         parsed = parse_long_field(fields[payload], 0, INT_MAX, &value);
-        if(count != payload + EXEC_FAIL_PAYLOAD_FIELDS || parsed == 0)
+        if(!payload_arity_matches(count, payload, EXEC_FAIL_PAYLOAD_FIELDS) || parsed == 0)
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1470,7 +1495,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         size_t action_index;
         bool   action_found;
 
-        if(count != payload + CALL_PAYLOAD_FIELDS)
+        if(!payload_arity_matches(count, payload, CALL_PAYLOAD_FIELDS))
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1505,7 +1530,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         bool   action_found;
         int    null_comparison;
 
-        if(count != payload + RESOURCE_PAYLOAD_FIELDS)
+        if(!payload_arity_matches(count, payload, RESOURCE_PAYLOAD_FIELDS))
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
@@ -1547,7 +1572,7 @@ static p101_tool_event_parse_status parse_payload(const char *magic, char *field
         {
             parsed = parse_long_field(fields[payload + 1U], 0, 1, &value);
         }
-        if(count != payload + COMPLETE_PAYLOAD_FIELDS || parsed == 0)
+        if(!payload_arity_matches(count, payload, COMPLETE_PAYLOAD_FIELDS) || parsed == 0)
         {
             p101_single_result_ = P101_TOOL_EVENT_PARSE_MALFORMED;
             goto p101_single_exit_;
