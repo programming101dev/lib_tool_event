@@ -21,12 +21,15 @@ endif()
 
 add_library(p101_tool_event_under_test STATIC
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/record.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/diagnostic.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/event.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/lifecycle.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/lesson_catalog.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/model.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/model_json.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/ownership.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/receipt.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/report.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/summary.c"
 )
 target_include_directories(p101_tool_event_under_test PUBLIC
@@ -59,6 +62,18 @@ target_link_libraries(test_p101_tool_event_protocol PRIVATE p101_tool_event_unde
 target_compile_options(test_p101_tool_event_protocol PRIVATE ${_COV})
 target_link_options(test_p101_tool_event_protocol PRIVATE ${_COV})
 add_test(NAME test_p101_tool_event_protocol COMMAND test_p101_tool_event_protocol)
+
+add_executable(test_p101_tool_event_diagnostic test_diagnostic.c)
+target_link_libraries(test_p101_tool_event_diagnostic PRIVATE p101_tool_event_under_test p101_error_under_test)
+target_compile_options(test_p101_tool_event_diagnostic PRIVATE ${_COV})
+target_link_options(test_p101_tool_event_diagnostic PRIVATE ${_COV})
+add_test(NAME test_p101_tool_event_diagnostic COMMAND test_p101_tool_event_diagnostic)
+
+add_executable(test_p101_tool_event_report test_report.c)
+target_link_libraries(test_p101_tool_event_report PRIVATE p101_tool_event_under_test p101_error_under_test)
+target_compile_options(test_p101_tool_event_report PRIVATE ${_COV})
+target_link_options(test_p101_tool_event_report PRIVATE ${_COV})
+add_test(NAME test_p101_tool_event_report COMMAND test_p101_tool_event_report)
 
 add_executable(test_p101_tool_event_summary test_summary.c)
 target_link_libraries(test_p101_tool_event_summary PRIVATE p101_tool_event_under_test p101_error_under_test)

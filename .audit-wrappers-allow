@@ -1,6 +1,18 @@
 # lib_tool_event sits below lib_env and the wrapper libraries in the dependency
 # graph. It must parse and serialize the protocol without calling back through
-# the observation layer it serves.
+# the observation layer it serves. Diagnostic and report formatting share that
+# same base-layer constraint: neither can call lib_c without creating
+# lib_env -> lib_tool_event -> lib_c -> lib_env. Allowing the source-level
+# memset identity also covers its checked compiler expansion.
+src/diagnostic.c		c:@F@fprintf
+src/diagnostic.c		c:@F@fputc
+src/diagnostic.c		c:@F@fputs
+src/diagnostic.c		c:@F@strcmp
+src/report.c		c:@F@fprintf
+src/report.c		c:@F@fputc
+src/report.c		c:@F@fputs
+src/report.c		c:@F@memset
+src/report.c		c:@F@strcmp
 src/event.c		c:@F@ferror
 src/event.c		c:@F@va_end
 src/event.c		c:@F@va_start

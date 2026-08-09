@@ -28,7 +28,7 @@ p101-event-model -r resources.log -c calls.log -o run-model.json
 ```
 
 It validates both complete protocol-v5 streams and serializes exactly one
-model. It does not emit findings. `p101 analyze` launches this builder once and
+model. It does not emit findings. `scripts/runtime/p101-analyze.py` launches this builder once and
 applies resource, synchronization, and trace policies to the resulting model
 without reparsing TSV.
 
@@ -46,6 +46,24 @@ append write, and `lib_env` serializes sequence assignment with publication.
 Event-write failures
 are sticky on the environment, queryable through
 `p101_env_event_log_failed()`, and reported when the environment is destroyed.
+
+Source-finding presentation is shared through
+`p101_tool_event/diagnostic.h`. Tools provide a typed finding, their
+policy-specific severity, message, and source location; the library resolves
+the finding and lesson route generated from
+`playgrounds/lessons/manifest.json`, then emits either compiler-compatible text
+or a `p101-tool-diagnostic-v1` JSON object with the same message. The common
+`p101_tool_rule_definition_lookup()` API also exposes the generated route to
+native consumers without a second parser. See
+[docs/diagnostic-format.md](docs/diagnostic-format.md).
+
+Complete finding runs use `p101_tool_event/report.h`. The shared
+`p101-tool-report-v1` lifecycle records the tool name, admitted inputs, an
+explicit `does_not_prove` boundary, the diagnostic array, named counters, the
+typed outcome, and the Unix exit status. It also owns the exact `-d:human`,
+`-d:json`, and `-d:human,json` parser and the stdout/stderr routing contract, so
+tools do not maintain private envelopes or duplicate an analysis pass for dual
+output. See [docs/report-format.md](docs/report-format.md).
 
 It does not decide whether a finding should fail a course gate or how a report
 should explain it. Those policies remain in the runtime policy modules and

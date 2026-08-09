@@ -89,7 +89,7 @@ POSIX async-signal-safe restrictions until `exec()` or `_Exit()`.
 ## Separate control streams
 
 `P101FAULT` records belong to the fault-injection control stream used by
-`p101-error-path-walk`; they are not runtime event records parsed by
+`test-faults`; they are not runtime event records parsed by
 `lib_tool_event`.
 
 ## Blind spots
