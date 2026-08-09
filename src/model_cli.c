@@ -27,7 +27,7 @@ static int  ingest_stream(struct p101_error *err, struct p101_tool_model *model,
 static int  record_belongs_in_stream(const struct p101_tool_event_record *record, bool calls);
 static int  write_model(struct p101_error *err, const struct p101_tool_model *model, const char *path);
 static int  admitted_streams_are_complete(const struct p101_tool_event_stream_health *resource_health, const struct p101_tool_event_stream_health *call_health);
-static int  stream_integrity_is_valid(const struct p101_tool_event_stream_health *health);
+static bool stream_integrity_is_valid(const struct p101_tool_event_stream_health *health);
 static int  producer_completed_or_execed(const struct p101_tool_event_producer_health *producer, const struct p101_tool_event_stream_health *resource_health);
 
 #ifdef P101_TOOL_EVENT_TESTING
@@ -367,11 +367,11 @@ static int admitted_streams_are_complete(const struct p101_tool_event_stream_hea
     for(size_t stream = 0U; stream < sizeof(streams) / sizeof(streams[0]); stream++)
     {
         const struct p101_tool_event_stream_health *health;
-        int                                         valid;
+        bool                                        valid;
 
         health = streams[stream];
         valid  = stream_integrity_is_valid(health);
-        if(valid == 0)
+        if(!valid)
         {
             p101_single_result_ = 0;
             goto p101_single_exit_;
@@ -395,10 +395,18 @@ p101_single_exit_:
     return p101_single_result_;
 }
 
-static int stream_integrity_is_valid(const struct p101_tool_event_stream_health *health)
+static bool stream_integrity_is_valid(const struct p101_tool_event_stream_health *health)
 {
-    return health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U && health->attempted_count_mismatches == 0U &&
-           health->records_after_completion == 0U && health->distinct_run_ids == 1U && health->invalid_run_ids == 0U && health->mixed_run_ids == 0 && health->allocation_failed == 0;
+    bool valid;
+
+    valid = false;
+    if(health != NULL && health->records_observed > 0U && health->producer_count > 0U && health->producer_write_failures == 0U && health->duplicate_sequences == 0U && health->nonmonotonic_sequences == 0U && health->attempted_count_mismatches == 0U &&
+       health->records_after_completion == 0U && health->distinct_run_ids == 1U && health->invalid_run_ids == 0U && health->mixed_run_ids == 0 && health->allocation_failed == 0)
+    {
+        valid = true;
+    }
+
+    return valid;
 }
 
 static int producer_completed_or_execed(const struct p101_tool_event_producer_health *producer, const struct p101_tool_event_stream_health *resource_health)

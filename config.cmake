@@ -46,6 +46,7 @@ set(p101_tool_event_HEADERS
         include/p101_tool_event/event.h
         include/p101_tool_event/lifecycle.h
         include/p101_tool_event/model.h
+        include/p101_tool_event/model_types.h
         include/p101_tool_event/ownership.h
         include/p101_tool_event/receipt.h
         include/p101_tool_event/summary.h

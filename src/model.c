@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <p101_error/error.h>
 #include <p101_record/record.h>
+#include <p101_tool_event/model.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +24,7 @@ static int    same_context(const struct p101_tool_model_node *left, const struct
 static size_t find_active_enter(const struct p101_tool_model *model, const size_t *matched_exit, size_t node_index, int require_name);
 static size_t find_enclosing_call(const struct p101_tool_model *model, const size_t *matched_exit, size_t resource_index);
 static size_t find_lifetime_end(const struct p101_tool_model *model, size_t birth_index);
-static int    is_lifetime_birth(const struct p101_tool_model_node *node);
+static bool   is_lifetime_birth(const struct p101_tool_model_node *node);
 static int    lifetime_matches(const struct p101_tool_model_node *birth, const struct p101_tool_model_node *death);
 static int    build_call_edges(struct p101_error *err, struct p101_tool_model *model, size_t *matched_exit);
 static int    build_resource_edges(struct p101_error *err, struct p101_tool_model *model, const size_t *matched_exit);
@@ -701,11 +702,11 @@ static size_t find_lifetime_end(const struct p101_tool_model *model, size_t birt
     size_t                             p101_single_result_;
     const struct p101_tool_model_node *birth;
     size_t                             match;
-    int                                is_birth;
+    bool                               is_birth;
 
     birth    = &model->nodes[birth_index].value;
     is_birth = is_lifetime_birth(birth);
-    if(is_birth == 0)
+    if(!is_birth)
     {
         p101_single_result_ = SIZE_MAX;
         goto p101_single_exit_;
@@ -730,27 +731,39 @@ p101_single_exit_:
     return p101_single_result_;
 }
 
-static int is_lifetime_birth(const struct p101_tool_model_node *node)
+static bool is_lifetime_birth(const struct p101_tool_model_node *node)
 {
-    int  p101_single_result_;
+    bool p101_single_result_;
     bool null_pointer;
     if(node->record_kind == P101_TOOL_EVENT_RECORD_FD)
     {
-        p101_single_result_ = node->fd_kind == P101_TOOL_EVENT_FD_OPEN;
+        p101_single_result_ = false;
+        if(node->fd_kind == P101_TOOL_EVENT_FD_OPEN)
+        {
+            p101_single_result_ = true;
+        }
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
     {
         null_pointer        = p101_record_pointer_is_null(node->new_ptr);
-        p101_single_result_ = node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && !null_pointer);
+        p101_single_result_ = false;
+        if(node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || (node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC && !null_pointer))
+        {
+            p101_single_result_ = true;
+        }
         goto p101_single_exit_;
     }
     if(node->record_kind == P101_TOOL_EVENT_RECORD_RESOURCE)
     {
-        p101_single_result_ = node->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || ((node->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE || node->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER) && node->related_id[0] != '\0');
+        p101_single_result_ = false;
+        if(node->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE || ((node->resource_kind == P101_TOOL_EVENT_RESOURCE_REPLACE || node->resource_kind == P101_TOOL_EVENT_RESOURCE_TRANSFER) && node->related_id[0] != '\0'))
+        {
+            p101_single_result_ = true;
+        }
         goto p101_single_exit_;
     }
-    p101_single_result_ = 0;
+    p101_single_result_ = false;
     goto p101_single_exit_;
 
 p101_single_exit_:

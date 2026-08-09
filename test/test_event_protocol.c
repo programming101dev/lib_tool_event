@@ -269,13 +269,17 @@ static void test_malformed_parser_records(void)
         "P101ALLOC\t5\trun\t1\t2\t3\t-\t-\tALLOC\tp\t-\t1\tx\tf\tc\n",
         "P101FORK\t5\trun\t1\t2\t3\t-\t-\t-1\t1\tf\tc\n",
         "P101FORK\t5\trun\t1\t2\t3\t-\t-\t1\tx\tf\tc\n",
+        "P101FORK\t5\trun\t1\t2\t3\t-\t-\t1\n",
         "P101SPAWN\t5\trun\t1\t2\t3\t-\t-\t1\t1\tf\tc\n",
+        "P101SPAWN\t5\trun\t1\t2\t3\t-\t-\t1\n",
         "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t-1\t0\t1\tf\tc\tt\n",
         "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t2\t1\tf\tc\tt\n",
         "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t0\tx\tf\tc\tt\n",
         "P101EXEC\t5\trun\t1\t2\t3\t-\t-\t1\t0\t1\tf\tc\n",
+        "P101EXEC\t5\trun\t1\t2\t3\t-\t-\n",
         "P101EXECFAIL\t5\trun\t1\t2\t3\t-\t-\tx\tf\tc\tt\n",
         "P101EXECFAIL\t5\trun\t1\t2\t3\t-\t-\t1\tf\tc\n",
+        "P101EXECFAIL\t5\trun\t1\t2\t3\t-\t-\n",
         "P101CALL\t5\trun\t1\t2\t3\t-\t-\tBAD\t1\tf\tc\ta\tr\tc\n",
         "P101CALL\t5\trun\t1\t2\t3\t-\t-\tENTER\t1\tf\tc\ta\tr\n",
         "P101CALL\t5\trun\t1\t2\t3\t-\t-\tENTER\tx\tf\tc\ta\tr\tc\n",
@@ -289,6 +293,7 @@ static void test_malformed_parser_records(void)
         "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t0\t1\n",
         "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t1\t0\n",
         "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\t1\t0\n",
+        "P101COMPLETE\t5\trun\t1\t2\t3\t-\t-\n",
     };
     struct p101_tool_event_record record;
     char                          too_many[512] = "P101FD\t5\trun\t1\t2\t3\t-\t-";

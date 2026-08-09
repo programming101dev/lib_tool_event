@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <p101_error/error.h>
 #include <p101_record/record.h>
+#include <p101_tool_event/model.h>
 #include <stdio.h>
 
 #ifdef P101_TOOL_EVENT_TESTING

@@ -62,10 +62,11 @@ src/receipt_cli.c		c:@F@fprintf
 src/receipt_cli.c		c:@F@printf
 src/receipt_cli.c		c:@F@strcmp
 src/record.c		c:@F@fprintf
+src/record.c		c:@F@strcmp
+src/record.c		c:@F@strlen
 src/record.c		c:@F@fputc
 src/record.c		c:@F@fputs
 src/summary.c		c:@F@strcmp
-src/summary.c		c:@F@strchr
 src/summary.c		c:@F@memcpy
 src/summary.c		c:@F@strlen
 src/summary.c		c:@F@malloc

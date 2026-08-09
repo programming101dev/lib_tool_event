@@ -51,7 +51,7 @@ static uint64_t digest_text(uint64_t hash, const char *label, const char *value)
 static uint64_t digest_size(uint64_t hash, const char *label, size_t value);
 static uint64_t digest_u64(uint64_t hash, const char *label, uint64_t value);
 static uint64_t fnv1a64_bytes(uint64_t hash, const unsigned char *bytes, size_t size);
-static int      receipt_is_valid(const struct p101_tool_run_receipt *receipt);
+static bool     receipt_is_valid(const struct p101_tool_run_receipt *receipt);
 static int      receipt_parse_boolean(const char **cursor, int *value);
 static int      receipt_parse_hex(const char **cursor, uint64_t *value);
 static int      receipt_parse_literal(const char **cursor, const char *literal);
@@ -105,41 +105,49 @@ p101_single_exit_:
     return result;
 }
 
-static int receipt_is_valid(const struct p101_tool_run_receipt *receipt)
+static bool receipt_is_valid(const struct p101_tool_run_receipt *receipt)
 {
-    int         p101_single_result_;
+    bool        p101_single_result_;
     const char *outcome_name;
     const char *failure_name;
 
     if(receipt == NULL || receipt->tool_name == NULL || receipt->tool_version == NULL || receipt->input_schema == NULL || receipt->input_identity == NULL || receipt->policy_schema == NULL || receipt->policy_identity == NULL || receipt->run_identity == NULL ||
        receipt->failed_stage == NULL || receipt->first_diagnostic == NULL || receipt->does_not_prove == NULL)
     {
-        p101_single_result_ = 0;
+        p101_single_result_ = false;
         goto p101_single_exit_;
     }
     if(receipt->checks_completed > receipt->checks_attempted)
     {
-        p101_single_result_ = 0;
+        p101_single_result_ = false;
         goto p101_single_exit_;
     }
     outcome_name = p101_tool_outcome_name(receipt->outcome);
     failure_name = p101_tool_failure_reason_name(receipt->failure_reason);
     if(outcome_name == NULL || failure_name == NULL)
     {
-        p101_single_result_ = 0;
+        p101_single_result_ = false;
         goto p101_single_exit_;
     }
     if((int)receipt->failure_reason != (int)receipt->outcome)
     {
-        p101_single_result_ = 0;
+        p101_single_result_ = false;
         goto p101_single_exit_;
     }
     if(receipt->outcome == P101_TOOL_OUTCOME_CLEAN)
     {
-        p101_single_result_ = receipt->failed_stage[0] == '\0' && receipt->first_diagnostic[0] == '\0';
+        p101_single_result_ = false;
+        if(receipt->failed_stage[0] == '\0' && receipt->first_diagnostic[0] == '\0')
+        {
+            p101_single_result_ = true;
+        }
         goto p101_single_exit_;
     }
-    p101_single_result_ = receipt->failed_stage[0] != '\0' && receipt->first_diagnostic[0] != '\0';
+    p101_single_result_ = false;
+    if(receipt->failed_stage[0] != '\0' && receipt->first_diagnostic[0] != '\0')
+    {
+        p101_single_result_ = true;
+    }
     goto p101_single_exit_;
 
 p101_single_exit_:
@@ -501,7 +509,7 @@ uint64_t p101_tool_run_receipt_digest(const struct p101_tool_run_receipt *receip
     uint64_t    p101_single_result_;
     uint64_t    hash;
     const char *name;
-    int         valid;
+    bool        valid;
 
     valid = receipt_is_valid(receipt);
     if(!valid)
@@ -546,7 +554,7 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
     struct parsed_receipt *parsed;
     void                  *storage;
     uint64_t               actual_digest;
-    int                    valid;
+    bool                   valid;
     int                    parse_result;
     int                    result;
 
@@ -574,7 +582,7 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
         validation->status = P101_TOOL_RECEIPT_BAD_VERSION;
         goto done;
     }
-    valid = 0;
+    valid = false;
     if(parse_result == 0)
     {
         valid = receipt_is_valid(&parsed->receipt);
@@ -904,7 +912,7 @@ int p101_tool_run_receipt_write_json(struct p101_error *err, FILE *stream, const
     const char *final_newline_text;
     uint64_t    receipt_digest;
     int         operation_status;
-    int         valid;
+    bool        valid;
 
     valid = receipt_is_valid(receipt);
     if(stream == NULL || !valid)

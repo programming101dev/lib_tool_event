@@ -285,6 +285,10 @@ int p101_record_read_json_string(const char **cursor, char *output, size_t outpu
                 {
                     high = (unsigned char)(high - 'a' + NUMBER_BASE);
                 }
+                else if(high >= 'A' && high <= 'F')
+                {
+                    high = (unsigned char)(high - 'A' + NUMBER_BASE);
+                }
                 else
                 {
                     goto done;
@@ -296,6 +300,10 @@ int p101_record_read_json_string(const char **cursor, char *output, size_t outpu
                 else if(low >= 'a' && low <= 'f')
                 {
                     low = (unsigned char)(low - 'a' + NUMBER_BASE);
+                }
+                else if(low >= 'A' && low <= 'F')
+                {
+                    low = (unsigned char)(low - 'A' + NUMBER_BASE);
                 }
                 else
                 {

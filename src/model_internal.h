@@ -2,7 +2,7 @@
 #define P101_TOOL_EVENT_MODEL_INTERNAL_H
 
 #include <p101_tool_event/lifecycle.h>
-#include <p101_tool_event/model.h>
+#include <p101_tool_event/model_types.h>
 
 struct p101_tool_model_owned_node
 {

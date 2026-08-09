@@ -191,10 +191,10 @@ extern "C"
     p101_tool_event_line_status  p101_tool_event_read_line(struct p101_error *err, FILE *stream, char *line, size_t line_size);
     p101_tool_event_parse_status p101_tool_event_parse_line(char *line, struct p101_tool_event_record *record);
     int                          p101_tool_event_write(FILE *stream, const struct p101_tool_event_output *record);
-    int                          p101_tool_event_line_is_ours(const char *line);
+    bool                         p101_tool_event_line_is_ours(const char *line);
     const char                  *p101_tool_event_parse_status_name(p101_tool_event_parse_status status);
     int                          p101_tool_event_stream_health_observe(struct p101_tool_event_stream_health *health, const struct p101_tool_event_record *record);
-    int                          p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health);
+    bool                         p101_tool_event_stream_health_is_complete(const struct p101_tool_event_stream_health *health);
     size_t                       p101_tool_event_stream_health_incomplete_producers(const struct p101_tool_event_stream_health *health);
     void                         p101_tool_event_stream_health_destroy(struct p101_tool_event_stream_health *health);
 
