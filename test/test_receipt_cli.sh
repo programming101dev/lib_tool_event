@@ -13,6 +13,10 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$work"
 
 "$fixture" "$work/valid.json"
+"$cli" --help >"$work/help.out"
+grep -q '^Usage:' "$work/help.out"
+"$cli" -h >"$work/help-short.out"
+grep -q '^Usage:' "$work/help-short.out"
 # P101_BOUNDARY_CASE boundary:durable-tool-receipt:clean
 "$cli" verify "$work/valid.json" >"$work/valid.out"
 grep -q '^valid receipt:' "$work/valid.out"

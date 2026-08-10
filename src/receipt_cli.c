@@ -20,6 +20,7 @@ int main(int argc, char *argv[])
     int                                     io_status;
     int                                     comparison;
     int                                     validation_status;
+    int                                     show_help;
     const char                             *message;
     const char                             *status_name;
     const char                             *outcome_name;
@@ -27,10 +28,39 @@ int main(int argc, char *argv[])
     err           = p101_error_create(false);
     status        = EXIT_TOOL_ERROR;
     require_clean = 0;
+    show_help     = 0;
     if(err == NULL)
     {
         io_status = fprintf(stderr, "p101-tool-receipt: cannot create error context\n");
         (void)io_status;
+        goto done;
+    }
+    comparison = -1;
+    if(argc == 2)
+    {
+        comparison = strcmp(argv[1], "--help");
+    }
+    if(argc == 2 && comparison == 0)
+    {
+        show_help = 1;
+    }
+    else
+    {
+        comparison = -1;
+        if(argc == 2)
+        {
+            comparison = strcmp(argv[1], "-h");
+        }
+        if(argc == 2 && comparison == 0)
+        {
+            show_help = 1;
+        }
+    }
+    if(show_help != 0)
+    {
+        io_status = printf("Usage: %s {verify|require-clean} <receipt.json>\n", argv[0]);
+        (void)io_status;
+        status = EXIT_VALID;
         goto done;
     }
     comparison = -1;
