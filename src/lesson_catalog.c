@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <p101_tool_event/lesson_catalog.h>
 #include <stddef.h>
+#include <string.h>
 
 /* Generated from playgrounds/lessons/manifest.json; do not edit. */
 
@@ -44,6 +45,7 @@ const struct p101_tool_rule_definition *p101_tool_rule_definition_lookup(p101_to
         {"P101-MOD-022", "P101-LESSON-MODULE-BOUNDARIES", "lessons/module-boundaries.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/module-boundaries.md"},
         {"P101-MOD-027", "P101-LESSON-MODULE-BOUNDARIES", "lessons/module-boundaries.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/module-boundaries.md"},
         {"P101-ALLOC-004", "P101-LESSON-GENERIC-RESOURCES", "lessons/generic-resources.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/generic-resources.md"},
+        {"P101-RESOURCE-000", "P101-LESSON-GENERIC-RESOURCES", "lessons/generic-resources.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/generic-resources.md"},
         {"P101-RESOURCE-001", "P101-LESSON-GENERIC-RESOURCES", "lessons/generic-resources.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/generic-resources.md"},
         {"P101-RESOURCE-002", "P101-LESSON-GENERIC-RESOURCES", "lessons/generic-resources.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/generic-resources.md"},
         {"P101-RESOURCE-003", "P101-LESSON-GENERIC-RESOURCES", "lessons/generic-resources.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/generic-resources.md"},
@@ -64,6 +66,7 @@ const struct p101_tool_rule_definition *p101_tool_rule_definition_lookup(p101_to
         {"P101-API-002", "P101-LESSON-API-COMPATIBILITY", "lessons/api-compatibility.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/api-compatibility.md"},
         {"P101-API-003", "P101-LESSON-API-COMPATIBILITY", "lessons/api-compatibility.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/api-compatibility.md"},
         {"P101-API-004", "P101-LESSON-API-COMPATIBILITY", "lessons/api-compatibility.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/api-compatibility.md"},
+        {"P101-EXPECT-001", "P101-LESSON-POLICY-EXPECTATIONS", "lessons/policy-expectations.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/policy-expectations.md"},
         {"P101-POLICY-RESOURCE-001", "P101-LESSON-POLICY-EXPECTATIONS", "lessons/policy-expectations.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/policy-expectations.md"},
         {"P101-POLICY-RESOURCE-002", "P101-LESSON-POLICY-EXPECTATIONS", "lessons/policy-expectations.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/policy-expectations.md"},
         {"P101-POLICY-RESOURCE-003", "P101-LESSON-POLICY-EXPECTATIONS", "lessons/policy-expectations.md", "https://github.com/programming101dev/playgrounds/blob/main/lessons/policy-expectations.md"}
@@ -82,4 +85,32 @@ const struct p101_tool_rule_definition *p101_tool_rule_definition_lookup(p101_to
         rule = &rules[finding];
     }
     return rule;
+}
+
+const struct p101_tool_rule_definition *p101_tool_rule_definition_lookup_id(const char *diagnostic_id)
+{
+    const struct p101_tool_rule_definition *p101_single_result_;
+
+    p101_single_result_ = NULL;
+    if(diagnostic_id == NULL)
+    {
+        errno = EINVAL;
+        goto p101_single_exit_;
+    }
+    for(p101_tool_finding finding = P101_TOOL_FINDING_WRAP_001; finding < P101_TOOL_FINDING_COUNT; finding++)
+    {
+        const struct p101_tool_rule_definition *definition;
+        int                                     comparison;
+
+        definition = p101_tool_rule_definition_lookup(finding);
+        comparison = strcmp(definition->id, diagnostic_id);
+        if(comparison == 0)
+        {
+            p101_single_result_ = definition;
+            break;
+        }
+    }
+
+p101_single_exit_:
+    return p101_single_result_;
 }

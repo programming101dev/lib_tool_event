@@ -74,11 +74,13 @@ static void ingest_fd(struct p101_error *err, struct p101_tool_model *model, siz
 
 static void test_model_graph_and_json(void)
 {
-    struct p101_error      *err;
-    struct p101_tool_model *model;
-    FILE                   *stream;
-    char                    text[4096];
-    size_t                  bytes;
+    struct p101_error                 *err;
+    struct p101_tool_model            *model;
+    FILE                              *stream;
+    char                               text[4096];
+    size_t                             bytes;
+    const struct p101_tool_model_node *node;
+    int                                comparison;
 
     err   = p101_error_create(false);
     model = p101_tool_model_create(err);
@@ -95,6 +97,9 @@ static void test_model_graph_and_json(void)
     EXPECT(p101_tool_model_node_at(model, 4U) == NULL);
     EXPECT(p101_tool_model_edge_at(model, 4U) == NULL);
     EXPECT(p101_tool_model_node_at(model, 0U)->domain == P101_TOOL_MODEL_NODE_CALL);
+    node       = p101_tool_model_node_at(model, 1U);
+    comparison = strcmp(node->resource_class, "fd");
+    EXPECT(comparison == 0);
     EXPECT(p101_tool_model_edge_at(model, 0U)->kind == P101_TOOL_MODEL_EDGE_CALL_RETURN);
 
     stream = tmpfile();
@@ -189,12 +194,14 @@ static void test_invalid_operations(void)
 
 static void test_all_event_kinds_and_growth(void)
 {
-    struct p101_error            *err;
-    struct p101_tool_model       *model;
-    struct p101_tool_event_record record;
-    FILE                         *stream;
-    char                          text[16384];
-    size_t                        bytes;
+    struct p101_error                 *err;
+    struct p101_tool_model            *model;
+    struct p101_tool_event_record      record;
+    FILE                              *stream;
+    char                               text[16384];
+    size_t                             bytes;
+    const struct p101_tool_model_node *node;
+    int                                comparison;
 
     err   = p101_error_create(false);
     model = p101_tool_model_create(err);
@@ -225,6 +232,9 @@ static void test_all_event_kinds_and_growth(void)
     record.alloc_kind = P101_TOOL_EVENT_ALLOC_FREE;
     record.ptr        = "0x2";
     ingest_record(err, model, &record);
+    node       = p101_tool_model_node_at(model, 4U);
+    comparison = strcmp(node->resource_class, "allocation");
+    EXPECT(comparison == 0);
 
     record                = base_record(P101_TOOL_EVENT_RECORD_RESOURCE, 8U);
     record.resource_kind  = P101_TOOL_EVENT_RESOURCE_ACQUIRE;

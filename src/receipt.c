@@ -604,7 +604,11 @@ int p101_tool_run_receipt_validate_json(struct p101_error *err, const char *text
     validation->checks_attempted    = parsed->receipt.checks_attempted;
     validation->checks_completed    = parsed->receipt.checks_completed;
     validation->fingerprint_present = parsed->fingerprint_present;
-    validation->receipt_digest      = actual_digest;
+    if(parsed->fingerprint_present != 0)
+    {
+        validation->fingerprint = parsed->fingerprint;
+    }
+    validation->receipt_digest = actual_digest;
 
 done:
     free(parsed);

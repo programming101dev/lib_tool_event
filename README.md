@@ -28,7 +28,7 @@ p101-event-model -r resources.log -c calls.log -o run-model.json
 ```
 
 It validates both complete protocol-v5 streams and serializes exactly one
-model. It does not emit findings. `scripts/runtime/p101-analyze.py` launches this builder once and
+model. It does not emit findings. `p101-inspect analyze` launches this builder once and
 applies resource, synchronization, and trace policies to the resulting model
 without reparsing TSV.
 
