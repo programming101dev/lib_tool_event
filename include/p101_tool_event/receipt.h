@@ -83,6 +83,7 @@ extern "C"
         size_t                              checks_attempted;
         size_t                              checks_completed;
         int                                 fingerprint_present;
+        struct p101_tool_event_fingerprint  fingerprint;
         uint64_t                            receipt_digest;
     };
 
