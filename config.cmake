@@ -34,10 +34,12 @@ set(p101_record_HEADERS
 
 set(p101_tool_event_SOURCES
         src/diagnostic.c
+        src/analysis.c
         src/event.c
         src/lifecycle.c
         src/lesson_catalog.c
         src/model.c
+        src/model_input.c
         src/model_json.c
         src/ownership.c
         src/receipt.c
@@ -47,6 +49,7 @@ set(p101_tool_event_SOURCES
 
 set(p101_tool_event_HEADERS
         include/p101_tool_event/diagnostic.h
+        include/p101_tool_event/analysis.h
         include/p101_tool_event/event.h
         include/p101_tool_event/lifecycle.h
         include/p101_tool_event/lesson_catalog.h
