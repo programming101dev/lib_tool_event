@@ -420,6 +420,54 @@ p101_single_exit_:
     return p101_single_result_;
 }
 
+size_t p101_tool_model_lifecycle_entry_count(const struct p101_tool_model *model)
+{
+    size_t p101_single_result_;
+
+    p101_single_result_ = 0U;
+    if(model != NULL)
+    {
+        p101_single_result_ = p101_tool_event_lifecycle_entry_count(model->lifecycle);
+    }
+    return p101_single_result_;
+}
+
+const struct p101_tool_event_lifecycle_entry *p101_tool_model_lifecycle_entry_at(const struct p101_tool_model *model, size_t index)
+{
+    const struct p101_tool_event_lifecycle_entry *p101_single_result_;
+
+    p101_single_result_ = NULL;
+    if(model != NULL)
+    {
+        p101_single_result_ = p101_tool_event_lifecycle_entry_at(model->lifecycle, index);
+    }
+    return p101_single_result_;
+}
+
+size_t p101_tool_model_lifecycle_finding_count(const struct p101_tool_model *model)
+{
+    size_t p101_single_result_;
+
+    p101_single_result_ = 0U;
+    if(model != NULL)
+    {
+        p101_single_result_ = p101_tool_event_lifecycle_finding_count(model->lifecycle);
+    }
+    return p101_single_result_;
+}
+
+const struct p101_tool_event_lifecycle_finding *p101_tool_model_lifecycle_finding_at(const struct p101_tool_model *model, size_t index)
+{
+    const struct p101_tool_event_lifecycle_finding *p101_single_result_;
+
+    p101_single_result_ = NULL;
+    if(model != NULL)
+    {
+        p101_single_result_ = p101_tool_event_lifecycle_finding_at(model->lifecycle, index);
+    }
+    return p101_single_result_;
+}
+
 static char *copy_text(struct p101_error *err, const char *text)
 {
     char       *p101_single_result_;
@@ -570,7 +618,8 @@ static void copy_record(struct p101_tool_model_owned_node *node, const struct p1
 
 static int copy_record_text(struct p101_error *err, struct p101_tool_model_owned_node *node, const struct p101_tool_event_record *record)
 {
-    int result;
+    int         result;
+    const char *resource_class;
 
 #define COPY_FIELD(field)                                                                                                                                                                                                                                          \
     do                                                                                                                                                                                                                                                             \
@@ -594,7 +643,22 @@ static int copy_record_text(struct p101_error *err, struct p101_tool_model_owned
     COPY_FIELD(ptr);
     COPY_FIELD(new_ptr);
     COPY_FIELD(target);
-    COPY_FIELD(resource_class);
+    resource_class = record->resource_class;
+    if(record->record_kind == P101_TOOL_EVENT_RECORD_FD)
+    {
+        resource_class = "fd";
+    }
+    else if(record->record_kind == P101_TOOL_EVENT_RECORD_ALLOC)
+    {
+        resource_class = "allocation";
+    }
+    node->resource_class = copy_text(err, resource_class);
+    if(node->resource_class == NULL)
+    {
+        result = -1;
+        goto done;
+    }
+    node->value.resource_class = node->resource_class;
     COPY_FIELD(resource_id);
     COPY_FIELD(related_id);
     COPY_FIELD(metadata);
