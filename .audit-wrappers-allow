@@ -1,35 +1,16 @@
 # lib_tool_event sits below lib_env and the wrapper libraries in the dependency
-# graph. It must parse and serialize the protocol without calling back through
-# the observation layer it serves. Diagnostic and report formatting share that
-# same base-layer constraint: neither can call lib_c without creating
-# lib_env -> lib_tool_event -> lib_c -> lib_env. Allowing the source-level
-# memset identity also covers its checked compiler expansion.
-src/diagnostic.c		c:@F@fprintf
-src/diagnostic.c		c:@F@fputc
-src/diagnostic.c		c:@F@fputs
-src/diagnostic.c		c:@F@strcmp
-src/report.c		c:@F@fprintf
-src/report.c		c:@F@fputc
-src/report.c		c:@F@fputs
-src/report.c		c:@F@memset
-src/report.c		c:@F@strcmp
+# graph. It must parse and analyze the protocol without calling back through
+# the observation layer it serves. Allowing a source-level memory function also
+# covers its checked compiler expansion.
 src/event.c		c:@F@ferror
-src/event.c		c:@F@va_end
-src/event.c		c:@F@va_start
-src/event.c		c:@F@vsnprintf
-src/event.c		c:@F@flockfile
-src/event.c		c:@F@fileno
-src/event.c		c:@F@fflush
 src/event.c		c:@F@fgetc
 src/event.c		c:@F@free
 src/event.c		c:@F@realloc
-src/event.c		c:@F@funlockfile
 src/event.c		c:@F@memset
 src/event.c		c:@F@strcmp
 src/event.c		c:@F@strlen
 src/event.c		c:@F@strncmp
 src/event.c		c:@F@strtol
-src/event.c		c:@F@write
 src/lifecycle.c		c:@F@free
 src/lifecycle.c		c:@F@malloc
 src/lifecycle.c		c:@F@memcpy
@@ -57,27 +38,6 @@ src/model_cli.c		c:@F@fprintf
 src/model_cli.c		c:@F@fputs
 src/model_cli.c		c:@F@memset
 src/model_cli.c		c:@F@strcmp
-src/receipt.c		c:@F@close
-src/receipt.c		c:@F@calloc
-src/receipt.c		c:@F@free
-src/receipt.c		c:@F@fprintf
-src/receipt.c		c:@F@fstat
-src/receipt.c		c:@F@fputs
-src/receipt.c		c:@F@malloc
-src/receipt.c		c:@F@memset
-src/receipt.c		c:@F@open
-src/receipt.c		c:@F@read
-src/receipt.c		c:@F@strcmp
-src/receipt.c		c:@F@strlen
-src/receipt.c		c:@F@strncmp
-src/receipt_cli.c		c:@F@fprintf
-src/receipt_cli.c		c:@F@printf
-src/receipt_cli.c		c:@F@strcmp
-src/record.c		c:@F@fprintf
-src/record.c		c:@F@strcmp
-src/record.c		c:@F@strlen
-src/record.c		c:@F@fputc
-src/record.c		c:@F@fputs
 src/summary.c		c:@F@strcmp
 src/summary.c		c:@F@memcpy
 src/summary.c		c:@F@strlen
@@ -112,4 +72,3 @@ src/model_input.c		c:@F@fclose
 src/model_input.c		c:@F@fopen
 src/model_input.c		c:@F@memset
 src/model_input.c		c:@F@strcmp
-src/lesson_catalog.c		c:@F@strcmp

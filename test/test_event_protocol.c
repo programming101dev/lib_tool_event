@@ -107,8 +107,6 @@ static void test_line_reader(void)
     p101_error_destroy(err);
 }
 
-P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:stale_version")
-
 static void test_small_helpers(void)
 {
     static const char *const prefixes[] = {
@@ -236,6 +234,7 @@ static void test_valid_parser_records(void)
 }
 
 P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:typed_refusal")
+P101_ATTR_SEMANTIC_ROLE("p101:boundary-case:boundary:tool-event-record:stale_version")
 
 static void test_malformed_parser_records(void)
 {

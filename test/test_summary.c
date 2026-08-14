@@ -154,15 +154,27 @@ static void test_recognized_field_failures(void)
 
     for(size_t index = 0U; index < sizeof(fields) / sizeof(fields[0]); index++)
     {
-        char  invalid[160];
-        char  duplicate[320];
-        char  key[128];
-        char *colon;
+        char   invalid[160];
+        char   duplicate[320];
+        char   key[128];
+        char  *colon;
+        size_t key_length;
 
         (void)snprintf(invalid, sizeof(invalid), "%s", fields[index]);
-        colon  = strchr(invalid, ':');
-        *colon = '\0';
-        (void)snprintf(key, sizeof(key), "%s", invalid);
+        colon = strchr(invalid, ':');
+        if(colon == NULL)
+        {
+            EXPECT(false);
+            continue;
+        }
+        key_length = (size_t)(colon - invalid);
+        if(key_length >= sizeof(key))
+        {
+            EXPECT(false);
+            continue;
+        }
+        memcpy(key, invalid, key_length);
+        key[key_length] = '\0';
         (void)snprintf(invalid, sizeof(invalid), "%s:\"bad\"", key);
         replace_once(text, sizeof(text), valid_summary, fields[index], invalid);
         {
