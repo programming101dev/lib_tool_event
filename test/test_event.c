@@ -3,8 +3,8 @@
 #include <p101_tool_event/event.h>
 #include <p101_tool_event/lifecycle.h>
 #include <p101_tool_event/ownership.h>
-#include <p101_tool_event/receipt.h>
 #include <p101_tool_event/summary.h>
+#include <p101_tool_support/receipt.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>

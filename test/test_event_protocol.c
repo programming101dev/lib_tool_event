@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <p101_error/error.h>
+#include <p101_json/json.h>
 #include <p101_record/record.h>
 #include <p101_tool_event/event.h>
 #include <stdint.h>
@@ -12,9 +13,9 @@ static int failures;
 
 extern p101_tool_event_parse_status p101_tool_event_test_parse_unknown_payload(void);
 extern void                         p101_tool_event_test_force_zero_errno_on_read_error(void);
-extern void                         p101_tool_event_test_force_zero_errno_on_write_error(void);
-extern void                         p101_tool_event_test_force_format_overflow(void);
-extern void                         p101_tool_event_test_write_unknown_payload(void);
+extern void                         p101_record_test_force_zero_errno_on_write_error(void);
+extern void                         p101_record_test_force_format_overflow(void);
+extern void                         p101_record_test_write_unknown_payload(void);
 
 #define EXPECT(condition)                                                                                                                                                                                                                                          \
     do                                                                                                                                                                                                                                                             \
@@ -43,7 +44,7 @@ static void expect_json_contents_write_failure(const char *text)
     {
         EXPECT(setvbuf(stream, NULL, _IONBF, 0U) == 0);
         EXPECT(close(fileno(stream)) == 0);
-        EXPECT(p101_record_write_json_string_contents(stream, text) == -1);
+        EXPECT(p101_json_write_string_contents(stream, text) == -1);
         (void)fclose(stream);
     }
 }
@@ -155,15 +156,15 @@ static void test_small_helpers(void)
     EXPECT(!p101_record_parse_size("999999999999999999999999999999999999", &value));
     EXPECT(p101_record_parse_size("0", &value) && value == 0U);
     EXPECT(p101_record_parse_size("42", &value) && value == 42U);
-    EXPECT(p101_record_write_json_string(NULL, "x") == -1 && errno == EINVAL);
-    EXPECT(p101_record_write_json_string(NULL, NULL) == -1 && errno == EINVAL);
-    EXPECT(p101_record_write_json_string_contents(NULL, "x") == -1 && errno == EINVAL);
-    EXPECT(p101_record_write_json_string_contents(NULL, NULL) == -1 && errno == EINVAL);
+    EXPECT(p101_json_write_string(NULL, "x") == -1 && errno == EINVAL);
+    EXPECT(p101_json_write_string(NULL, NULL) == -1 && errno == EINVAL);
+    EXPECT(p101_json_write_string_contents(NULL, "x") == -1 && errno == EINVAL);
+    EXPECT(p101_json_write_string_contents(NULL, NULL) == -1 && errno == EINVAL);
     stream = tmpfile();
     EXPECT(stream != NULL);
     if(stream != NULL)
     {
-        EXPECT(p101_record_write_json_string(stream, "\"\\\b\f\n\r\t\1z") == 0);
+        EXPECT(p101_json_write_string(stream, "\"\\\b\f\n\r\t\1z") == 0);
         rewind(stream);
         EXPECT(fgets(json, sizeof(json), stream) != NULL);
         EXPECT(strcmp(json, "\"\\\"\\\\\\b\\f\\n\\r\\t\\u0001z\"") == 0);
@@ -173,8 +174,8 @@ static void test_small_helpers(void)
     EXPECT(stream != NULL);
     if(stream != NULL)
     {
-        EXPECT(p101_record_write_json_string(stream, NULL) == -1 && errno == EINVAL);
-        EXPECT(p101_record_write_json_string_contents(stream, NULL) == -1 && errno == EINVAL);
+        EXPECT(p101_json_write_string(stream, NULL) == -1 && errno == EINVAL);
+        EXPECT(p101_json_write_string_contents(stream, NULL) == -1 && errno == EINVAL);
         EXPECT(fclose(stream) == 0);
     }
     stream = tmpfile();
@@ -183,7 +184,7 @@ static void test_small_helpers(void)
     {
         EXPECT(setvbuf(stream, NULL, _IONBF, 0U) == 0);
         EXPECT(close(fileno(stream)) == 0);
-        EXPECT(p101_record_write_json_string(stream, "x") == -1);
+        EXPECT(p101_json_write_string(stream, "x") == -1);
         (void)fclose(stream);
     }
     expect_json_contents_write_failure("\"");
@@ -562,19 +563,19 @@ static void test_writer_failures_and_field_boundaries(void)
     stream = tmpfile();
     EXPECT(stream != NULL);
     EXPECT(close(fileno(stream)) == 0);
-    p101_tool_event_test_force_zero_errno_on_write_error();
+    p101_record_test_force_zero_errno_on_write_error();
     EXPECT(p101_tool_event_write(stream, &output) == -1);
     EXPECT(errno == EIO);
     fclose(stream);
 
-    p101_tool_event_test_write_unknown_payload();
+    p101_record_test_write_unknown_payload();
     EXPECT(p101_tool_event_test_parse_unknown_payload() == P101_TOOL_EVENT_PARSE_OTHER);
 
     set_common_output(&output, P101_TOOL_EVENT_RECORD_FD);
     output.fd_kind = P101_TOOL_EVENT_FD_OPEN;
     stream         = tmpfile();
     EXPECT(stream != NULL);
-    p101_tool_event_test_force_format_overflow();
+    p101_record_test_force_format_overflow();
     EXPECT(p101_tool_event_write(stream, &output) == -1);
     EXPECT(errno == EMSGSIZE);
     fclose(stream);

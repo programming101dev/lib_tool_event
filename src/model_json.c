@@ -1,7 +1,7 @@
 #include "model_internal.h"
 #include <errno.h>
 #include <p101_error/error.h>
-#include <p101_record/record.h>
+#include <p101_json/json.h>
 #include <p101_tool_event/model.h>
 #include <stdio.h>
 
@@ -1219,7 +1219,7 @@ static int write_json_string(FILE *stream, const char *text)
 {
     int p101_single_result_;
 
-    p101_single_result_ = p101_record_write_json_string(stream, text);
+    p101_single_result_ = p101_json_write_string(stream, text);
     return p101_single_result_;
 }
 
@@ -1227,7 +1227,7 @@ static int write_json_string_contents(FILE *stream, const char *text)
 {
     int p101_single_result_;
 
-    p101_single_result_ = p101_record_write_json_string_contents(stream, text);
+    p101_single_result_ = p101_json_write_string_contents(stream, text);
     return p101_single_result_;
 }
 

@@ -5,13 +5,10 @@ byte-safe line reader, the versioned TSV parser, execution-context metadata,
 generic resource records, and the policy-free lifecycle replay mechanism shared
 by runtime tools.
 
-The repository also installs the smaller `p101_record` library. Its
-`<p101_record/record.h>` API only splits, unescapes, and validates bounded
-tab-delimited fields; it has no event kinds, schema versions, or lifecycle
-policy. This is an intentional boundary: fact-stream consumers such as
-`lib_c_facts` can reuse the text-record mechanics without depending on the
-runtime event protocol. Event producers and analyzers use `p101_tool_event`,
-which remains the sole owner of the P101 event schema.
+This repository owns `p101_tool_event`: event parsing, health validation,
+lifecycle replay, and causal analysis. Its lower-level record, JSON, and tool
+output dependencies are independently owned by `lib_record`, `lib_json`, and
+`lib_tool_support`.
 
 `p101_tool_event/model.h` adds the shared policy-free causal model. Consumers
 ingest validated event records, finish the model once, and then inspect
@@ -48,7 +45,7 @@ are sticky on the environment, queryable through
 `p101_env_event_log_failed()`, and reported when the environment is destroyed.
 
 Source-finding presentation is shared through
-`p101_tool_event/diagnostic.h`. Tools provide a typed finding, their
+`p101_tool_support/diagnostic.h`. Tools provide a typed finding, their
 policy-specific severity, message, and source location; the library resolves
 the finding and lesson route generated from
 `playgrounds/lessons/manifest.json`, then emits either compiler-compatible text
@@ -57,7 +54,7 @@ or a `p101-tool-diagnostic-v1` JSON object with the same message. The common
 native consumers without a second parser. See
 [docs/diagnostic-format.md](docs/diagnostic-format.md).
 
-Complete finding runs use `p101_tool_event/report.h`. The shared
+Complete finding runs use `p101_tool_support/report.h`. The shared
 `p101-tool-report-v1` lifecycle records the tool name, admitted inputs, an
 explicit `does_not_prove` boundary, the diagnostic array, named counters, the
 typed outcome, and the Unix exit status. It also owns the exact `-d:human`,

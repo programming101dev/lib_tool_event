@@ -17,7 +17,7 @@ formats.
 `playgrounds/lessons/manifest.json` is the single editable source of truth for
 finding IDs, lesson IDs, lesson paths, and lesson URLs. The checked generator
 `scripts/generators/generate-tool-lesson-catalog.py` produces
-`p101_tool_event/lesson_catalog.h` and its implementation. Native consumers use
+`p101_tool_support/lesson_catalog.h` and its implementation. Native consumers use
 the common
 `p101_tool_rule_definition_lookup()` function; they do not parse the JSON or
 duplicate its strings.

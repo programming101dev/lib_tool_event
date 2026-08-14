@@ -12,7 +12,7 @@ extern void p101_tool_event_test_model_fail_allocation_after(size_t successful_a
 extern void p101_tool_event_test_model_set_allocation_failure_errno(int errnum);
 extern void p101_tool_event_test_model_fail_write_after(size_t successful_writes);
 extern void p101_tool_event_test_lifecycle_fail_allocation_after(size_t successful_allocations);
-extern void p101_tool_event_test_record_fail_write_after(size_t successful_writes);
+extern void p101_json_test_fail_write_after(size_t successful_writes);
 
 #define EXPECT(condition)                                                                                                                                                                                                                                          \
     do                                                                                                                                                                                                                                                             \
@@ -395,13 +395,13 @@ static void test_all_event_kinds_and_growth(void)
 
         stream = tmpfile();
         EXPECT(stream != NULL);
-        p101_tool_event_test_record_fail_write_after(successful_writes);
+        p101_json_test_fail_write_after(successful_writes);
         result = p101_tool_model_write_json(err, stream, model);
         fclose(stream);
         if(result == 0)
         {
             EXPECT(successful_writes > 0U);
-            p101_tool_event_test_record_fail_write_after(SIZE_MAX);
+            p101_json_test_fail_write_after(SIZE_MAX);
             break;
         }
         EXPECT(p101_error_is_errno(err, EIO));

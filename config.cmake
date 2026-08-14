@@ -1,7 +1,7 @@
 # Project metadata
 set(PROJECT_NAME "p101_tool_event")
 set(PROJECT_VERSION "0.0.1")
-set(PROJECT_DESCRIPTION "Programming 101 event protocol and lifecycle model")
+set(PROJECT_DESCRIPTION "Programming 101 event parsing and lifecycle analysis")
 set(PROJECT_LANGUAGE "C")
 
 set(CMAKE_C_STANDARD 17)
@@ -21,49 +21,35 @@ set(DARWIN_STANDARD_FLAGS
 set(LINUX_STANDARD_FLAGS)
 set(BSD_STANDARD_FLAGS)
 
-set(LIBRARY_TARGETS p101_record p101_tool_event)
-set(EXECUTABLE_TARGETS p101_event_model p101_receipt)
-
-set(p101_record_SOURCES
-        src/record.c
-)
-
-set(p101_record_HEADERS
-        include/p101_record/record.h
-)
+set(LIBRARY_TARGETS p101_tool_event)
+set(EXECUTABLE_TARGETS p101_event_model)
 
 set(p101_tool_event_SOURCES
-        src/diagnostic.c
         src/analysis.c
         src/event.c
         src/lifecycle.c
-        src/lesson_catalog.c
         src/model.c
         src/model_input.c
         src/model_json.c
         src/ownership.c
-        src/receipt.c
-        src/report.c
         src/summary.c
 )
 
 set(p101_tool_event_HEADERS
-        include/p101_tool_event/diagnostic.h
         include/p101_tool_event/analysis.h
         include/p101_tool_event/event.h
         include/p101_tool_event/lifecycle.h
-        include/p101_tool_event/lesson_catalog.h
         include/p101_tool_event/model.h
         include/p101_tool_event/model_types.h
         include/p101_tool_event/ownership.h
-        include/p101_tool_event/receipt.h
-        include/p101_tool_event/report.h
         include/p101_tool_event/summary.h
 )
 
 set(p101_tool_event_LINK_LIBRARIES
         p101_error
+        p101_json
         p101_record
+        p101_tool_support
 )
 
 set(p101_event_model_SOURCES
@@ -73,17 +59,6 @@ set(p101_event_model_SOURCES
 set(p101_event_model_OUTPUT_NAME p101-event-model)
 
 set(p101_event_model_LINK_LIBRARIES
-        p101_tool_event
-        p101_error
-)
-
-set(p101_receipt_SOURCES
-        src/receipt_cli.c
-)
-
-set(p101_receipt_OUTPUT_NAME p101-tool-receipt)
-
-set(p101_receipt_LINK_LIBRARIES
         p101_tool_event
         p101_error
 )

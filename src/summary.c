@@ -1,4 +1,4 @@
-#include <p101_record/record.h>
+#include <p101_json/json.h>
 #include <p101_tool_event/summary.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -675,7 +675,7 @@ static bool parse_string(struct json_cursor *cursor, char *output, size_t output
 {
     int status;
 
-    status = p101_record_read_json_string(&cursor->current, output, output_size);
+    status = p101_json_read_string(&cursor->current, output, output_size);
 
     return status == 0;
 }

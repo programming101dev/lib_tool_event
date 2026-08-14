@@ -2,7 +2,7 @@
 #include <inttypes.h>
 #include <p101_error/error.h>
 #include <p101_tool_event/analysis.h>
-#include <p101_tool_event/lesson_catalog.h>
+#include <p101_tool_support/lesson_catalog.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

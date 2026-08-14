@@ -1,11 +1,13 @@
+#include <p101_json/json.h>
+#include <p101_record/event.h>
 #include <p101_record/record.h>
-#include <p101_tool_event/diagnostic.h>
+#include <p101_tool_support/diagnostic.h>
 #include <p101_tool_event/event.h>
-#include <p101_tool_event/lesson_catalog.h>
+#include <p101_tool_support/lesson_catalog.h>
 #include <p101_tool_event/lifecycle.h>
 #include <p101_tool_event/model.h>
-#include <p101_tool_event/receipt.h>
-#include <p101_tool_event/report.h>
+#include <p101_tool_support/receipt.h>
+#include <p101_tool_support/report.h>
 
 int main()
 {
