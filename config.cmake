@@ -49,6 +49,7 @@ set(p101_tool_event_LINK_LIBRARIES
         p101_error
         p101_json
         p101_record
+        p101_transition
         p101_tool_support
 )
 

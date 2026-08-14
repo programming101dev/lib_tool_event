@@ -40,6 +40,10 @@ target_include_directories(p101_record_under_test PUBLIC
 target_compile_definitions(p101_record_under_test PRIVATE P101_RECORD_TESTING=1)
 target_compile_options(p101_record_under_test PRIVATE ${P101_COVERAGE_FLAGS})
 
+add_library(p101_transition_under_test STATIC ../../lib_transition/src/transition.c)
+target_include_directories(p101_transition_under_test PUBLIC ../../lib_transition/include)
+target_compile_options(p101_transition_under_test PRIVATE ${P101_COVERAGE_FLAGS})
+
 add_library(p101_json_under_test STATIC ../../lib_json/src/json.c)
 target_include_directories(p101_json_under_test PUBLIC
         ../../lib_json/include
@@ -79,6 +83,7 @@ target_link_libraries(p101_tool_event_under_test PUBLIC
         ${P101_ERROR_LIBRARY}
         p101_json_under_test
         p101_record_under_test
+        p101_transition_under_test
         p101_tool_support_under_test
         Threads::Threads)
 
@@ -110,7 +115,7 @@ add_test(NAME test_model_cli
                 "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/model-calls.log")
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    foreach(library IN ITEMS p101_record_under_test p101_json_under_test p101_tool_support_under_test)
+    foreach(library IN ITEMS p101_record_under_test p101_transition_under_test p101_json_under_test p101_tool_support_under_test)
         target_compile_options(${library} PRIVATE -Wall -Wextra -Werror -pedantic-errors)
     endforeach()
     target_compile_options(p101_tool_event_under_test PRIVATE -Wall -Wextra -Werror -pedantic-errors)
