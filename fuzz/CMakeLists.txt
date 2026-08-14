@@ -13,7 +13,9 @@ set(P101_FUZZ_FLAGS -fsanitize=fuzzer,address,undefined -g -O1)
 
 add_executable(fuzz
         fuzz_event.c
-        "${CMAKE_CURRENT_SOURCE_DIR}/../src/record.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_json/src/json.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_record/src/event_write.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_record/src/record.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/event.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/lifecycle.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/../src/summary.c"
@@ -22,6 +24,8 @@ add_executable(fuzz
 target_include_directories(fuzz PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../include"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_error/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_json/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../lib_record/include"
 )
 target_compile_definitions(fuzz PRIVATE _POSIX_C_SOURCE=200809L)
 target_compile_options(fuzz PRIVATE ${P101_FUZZ_FLAGS})
