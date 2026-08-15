@@ -77,6 +77,6 @@ deterministic and parseable.
 `test/test_diagnostic.c` checks exact compiler-style output, control-character
 escaping, the shared message in JSON, typed lookup, the playground route, and
 invalid input. `scripts/tests/test-tool-lesson-catalog.py` checks deterministic
-generation, drift detection, and duplicate-route rejection. Run `./test.sh`
-for the library tests, or `./build.sh -q` for the repository's strict analysis
+generation, drift detection, and duplicate-route rejection. Run `cmake -S . -B build -DP101_BUILD_LEVEL=2 && cmake --build build`
+for the library tests, or `cmake --build build` for the repository's strict analysis
 pipeline.

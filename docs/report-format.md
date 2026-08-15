@@ -69,5 +69,5 @@ that the named tool found no findings in its admitted inputs.
 ## Evidence
 
 `test/test_report.c` verifies exact option parsing, dual-stream routing,
-diagnostic reuse, counters, outcome, and exit status. `./test.sh` runs the
-focused suite and `./build.sh -q` runs the strict repository pipeline.
+diagnostic reuse, counters, outcome, and exit status. `cmake -S . -B build -DP101_BUILD_LEVEL=2 && cmake --build build` runs the
+focused suite and `cmake --build build` runs the strict repository pipeline.

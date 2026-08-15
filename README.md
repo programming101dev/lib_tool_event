@@ -103,5 +103,5 @@ admitted inputs.
 The model is exercised by `test/test_model.c`, including allocation failures,
 retry after partial construction, JSON escaping, output failure, and every
 event domain. `test/test_model_cli.sh` proves the command-line boundary accepts
-complete streams and rejects incomplete ones. Run `./test.sh`; use
-`./build.sh -q` for the strict repository pipeline.
+complete streams and rejects incomplete ones. Run `cmake -S . -B build -DP101_BUILD_LEVEL=2 && cmake --build build`; use
+`cmake --build build` for the strict repository pipeline.
