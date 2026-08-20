@@ -54,6 +54,10 @@ or a `p101-tool-diagnostic-v1` JSON object with the same message. The common
 native consumers without a second parser. See
 [docs/diagnostic-format.md](docs/diagnostic-format.md).
 
+The shared initializer accepts either the generated enum or a stable diagnostic
+ID. Tools provide the location and observed symptom; the catalog provides the
+public playground route, and the playground owns all repair guidance.
+
 Complete finding runs use `p101_tool_support/report.h`. The shared
 `p101-tool-report-v1` lifecycle records the tool name, admitted inputs, an
 explicit `does_not_prove` boundary, the diagnostic array, named counters, the

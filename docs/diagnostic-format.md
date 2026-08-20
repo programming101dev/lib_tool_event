@@ -18,9 +18,14 @@ formats.
 finding IDs, lesson IDs, lesson paths, and lesson URLs. The checked generator
 `scripts/generators/generate-tool-lesson-catalog.sh` produces
 `p101_tool_support/lesson_catalog.h` and its implementation. Native consumers use
-the common
-`p101_tool_rule_definition_lookup()` function; they do not parse the JSON or
-duplicate its strings.
+the common `p101_tool_rule_definition_lookup()` function; they do not parse the
+JSON or duplicate its strings.
+
+Consumers whose finding identity is selected at runtime use
+`p101_tool_diagnostic_initialize_id`; consumers with a compile-time identity
+use `p101_tool_diagnostic_initialize`. Both resolve the same generated catalog.
+Tool messages describe the observed symptom. Repair instructions belong in the
+linked playground lesson, not in a second tool-owned answer.
 
 ## Text output
 
