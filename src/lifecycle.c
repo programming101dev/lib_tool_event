@@ -276,11 +276,22 @@ static int ingest_resource(struct p101_error *err, struct p101_tool_event_lifecy
 {
     int p101_single_result_;
     int result;
+    int class_comparison;
 
     if(record->resource_class == NULL || record->resource_id == NULL)
     {
         P101_ERROR_RAISE_CHECK(err);
         p101_single_result_ = -1;
+        goto p101_single_exit_;
+    }
+    class_comparison = strcmp(record->resource_class, "blocking-operation");
+    if(class_comparison != 0)
+    {
+        class_comparison = strcmp(record->resource_class, "pthread-terminal-attempt");
+    }
+    if(class_comparison == 0)
+    {
+        p101_single_result_ = 0;
         goto p101_single_exit_;
     }
 
@@ -333,6 +344,19 @@ static int ingest_resource(struct p101_error *err, struct p101_tool_event_lifecy
                 }
             }
             break;
+        case P101_TOOL_EVENT_RESOURCE_USE:
+        {
+            const struct p101_tool_event_lifecycle_entry *previous;
+
+            previous = find_latest(model, record->pid, record->resource_class, record->resource_id, true);
+            result   = 0;
+            if(previous == NULL)
+            {
+                previous = find_latest(model, record->pid, record->resource_class, record->resource_id, false);
+                result   = add_finding(err, model, P101_TOOL_EVENT_LIFECYCLE_FINDING_INVALID_USE, record, previous);
+            }
+            break;
+        }
         default:
             P101_ERROR_RAISE_CHECK(err);
             result = -1;

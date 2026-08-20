@@ -534,6 +534,9 @@ static const char *lifecycle_finding_kind_name(p101_tool_event_lifecycle_finding
         case P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT:
             p101_single_result_ = "exec-inherit";
             goto p101_single_exit_;
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_INVALID_USE:
+            p101_single_result_ = "invalid-use";
+            goto p101_single_exit_;
         default:
             p101_single_result_ = "unknown";
             goto p101_single_exit_;    // GCOVR_EXCL_LINE -- exhaustive enum defensive fallback.
@@ -1306,6 +1309,11 @@ static const char *resource_operation_name(p101_tool_event_resource_kind kind)
         case P101_TOOL_EVENT_RESOURCE_TRANSFER:
         {
             p101_single_result_ = "transfer";
+            goto p101_single_exit_;
+        }
+        case P101_TOOL_EVENT_RESOURCE_USE:
+        {
+            p101_single_result_ = "use";
             goto p101_single_exit_;
         }
         // GCOVR_EXCL_START

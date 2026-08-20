@@ -104,6 +104,21 @@ The protocol sees only records emitted by p101 wrappers or user code using the
 observation API. Direct libc calls and third-party internals are outside its
 admitted inputs.
 
+Synchronization replay also checks the semantic runtime obligations that a
+compiler cannot see: destroying a mutex while it is locked or waited on,
+joining or detaching a thread after its joinable lifetime was already consumed,
+concurrent waits that associate one condition variable with different mutexes,
+and beginning an instrumented blocking operation while the same execution
+context holds a lock. Allocation replay reports an observed zero-size request.
+These checks consume event identities and execution contexts; they do not infer
+behavior from source variable names.
+
+The runtime checks cannot see direct native calls, uninstrumented third-party
+code, a blocking operation not marked by a wrapper, or synchronization that
+happened before capture began. A clean report therefore demonstrates only the
+admitted event stream. It is not a whole-program deadlock or memory-safety
+proof.
+
 The model is exercised by `test/test_model.c`, including allocation failures,
 retry after partial construction, JSON escaping, output failure, and every
 event domain. `test/test_model_cli.sh` proves the command-line boundary accepts

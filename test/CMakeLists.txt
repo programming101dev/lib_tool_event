@@ -89,7 +89,7 @@ target_link_libraries(p101_tool_event_under_test PUBLIC
 
 configure_file(fixtures/fingerprint.txt fingerprint.txt COPYONLY)
 
-foreach(test_name IN ITEMS event event_protocol health lifecycle model summary)
+foreach(test_name IN ITEMS analysis event event_protocol health lifecycle model summary)
     add_executable(test_${test_name} test_${test_name}.c)
     target_link_libraries(test_${test_name} PRIVATE p101_tool_event_under_test)
     target_compile_options(test_${test_name} PRIVATE ${P101_COVERAGE_FLAGS})
@@ -119,7 +119,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(${library} PRIVATE -Wall -Wextra -Werror -pedantic-errors)
     endforeach()
     target_compile_options(p101_tool_event_under_test PRIVATE -Wall -Wextra -Werror -pedantic-errors)
-    foreach(test_name IN ITEMS event event_protocol health lifecycle model summary)
+    foreach(test_name IN ITEMS analysis event event_protocol health lifecycle model summary)
         target_compile_options(test_${test_name} PRIVATE -Wall -Wextra -Werror -pedantic-errors)
     endforeach()
 endif()

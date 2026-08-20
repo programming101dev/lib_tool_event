@@ -806,7 +806,7 @@ static bool lookup_resource_kind(const char *text, size_t *index)
     bool found;
 
     found = false;
-    for(size_t position = 0U; position <= (size_t)P101_TOOL_EVENT_RESOURCE_TRANSFER; position++)
+    for(size_t position = 0U; position <= (size_t)P101_TOOL_EVENT_RESOURCE_USE; position++)
     {
         const char *name;
         int         comparison;

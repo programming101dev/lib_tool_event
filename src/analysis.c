@@ -727,9 +727,21 @@ static int analyze_resources(struct p101_error *err, struct p101_tool_analysis *
     analysis->resource_records = 0U;
     for(size_t index = 0U; index < analysis->ordered_count; index++)
     {
-        if(analysis->ordered[index].node->domain == P101_TOOL_MODEL_NODE_RESOURCE)
+        const struct p101_tool_model_node *node;
+
+        node = analysis->ordered[index].node;
+        if(node->domain == P101_TOOL_MODEL_NODE_RESOURCE)
         {
             analysis->resource_records++;
+        }
+        if(node->record_kind == P101_TOOL_EVENT_RECORD_ALLOC && node->size == 0U && (node->alloc_kind == P101_TOOL_EVENT_ALLOC_ALLOC || node->alloc_kind == P101_TOOL_EVENT_ALLOC_REALLOC))
+        {
+            operation_status = add_finding(err, analysis, "P101-MEM-001", P101_TOOL_ANALYSIS_RESOURCE, "allocation size was zero at runtime", node, node->ptr, node->new_ptr, NULL);
+            if(operation_status != 0)
+            {
+                p101_single_result_ = -1;
+                goto p101_single_exit_;
+            }
         }
     }
     finding_count = p101_tool_model_lifecycle_finding_count(analysis->model);
@@ -768,12 +780,20 @@ static const char *lifecycle_identifier(const struct p101_tool_event_lifecycle_f
     const char *p101_single_result_;
     bool        descriptor;
     bool        allocation;
+    bool        process_obligation;
     int         comparison;
 
-    comparison = strcmp(finding->resource_class, "fd");
-    descriptor = comparison == 0;
-    comparison = strcmp(finding->resource_class, "allocation");
-    allocation = comparison == 0;
+    comparison         = strcmp(finding->resource_class, "fd");
+    descriptor         = comparison == 0;
+    comparison         = strcmp(finding->resource_class, "allocation");
+    allocation         = comparison == 0;
+    comparison         = strcmp(finding->resource_class, "child-process");
+    process_obligation = comparison == 0;
+    if(!process_obligation)
+    {
+        comparison         = strcmp(finding->resource_class, "pthread-joinable-thread");
+        process_obligation = comparison == 0;
+    }
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wcovered-switch-default"
@@ -781,7 +801,11 @@ static const char *lifecycle_identifier(const struct p101_tool_event_lifecycle_f
     switch(finding->kind)
     {
         case P101_TOOL_EVENT_LIFECYCLE_FINDING_LEAK:
-            if(descriptor)
+            if(process_obligation)
+            {
+                p101_single_result_ = "P101-PROC-001";
+            }
+            else if(descriptor)
             {
                 p101_single_result_ = "P101-FD-001";
             }
@@ -838,6 +862,9 @@ static const char *lifecycle_identifier(const struct p101_tool_event_lifecycle_f
         case P101_TOOL_EVENT_LIFECYCLE_FINDING_EXEC_INHERIT:
             p101_single_result_ = "P101-FD-004";
             break;
+        case P101_TOOL_EVENT_LIFECYCLE_FINDING_INVALID_USE:
+            p101_single_result_ = "P101-RESOURCE-007";
+            break;
         default:
             p101_single_result_ = "P101-RESOURCE-000";
             break;
@@ -853,48 +880,58 @@ static const char *lifecycle_message(const char *identifier)
     const char *p101_single_result_;
     int         comparison;
 
-    comparison = strcmp(identifier, "P101-FD-001");
+    comparison = strcmp(identifier, "P101-PROC-001");
     if(comparison == 0)
     {
-        p101_single_result_ = "descriptor is still open at the end of the run";
+        p101_single_result_ = "child process was not reaped or joinable thread was not joined or detached";
     }
     else
     {
-        static const char *const identifiers[] = {
-            "P101-FD-002",
-            "P101-FD-003",
-            "P101-FD-004",
-            "P101-ALLOC-001",
-            "P101-ALLOC-002",
-            "P101-ALLOC-003",
-            "P101-ALLOC-004",
-            "P101-RESOURCE-001",
-            "P101-RESOURCE-002",
-            "P101-RESOURCE-003",
-            "P101-RESOURCE-004",
-        };
-        static const char *const messages[] = {
-            "descriptor was closed more than once",
-            "descriptor was closed without an observed acquisition",
-            "descriptor would be inherited across exec without CLOEXEC",
-            "allocation is still live at the end of the run",
-            "allocation was freed more than once",
-            "pointer was freed without an observed allocation",
-            "realloc referenced a pointer that was not live",
-            "resource is still live at the end of the run",
-            "resource was released more than once",
-            "resource was released without an observed acquisition",
-            "resource replacement referenced a resource that was not live",
-        };
-
-        p101_single_result_ = "resource was acquired while the same identity was already live";
-        for(size_t index = 0U; index < sizeof(identifiers) / sizeof(identifiers[0]); index++)
+        comparison = strcmp(identifier, "P101-FD-001");
+        if(comparison == 0)
         {
-            comparison = strcmp(identifier, identifiers[index]);
-            if(comparison == 0)
+            p101_single_result_ = "descriptor is still open at the end of the run";
+        }
+        else
+        {
+            static const char *const identifiers[] = {
+                "P101-FD-002",
+                "P101-FD-003",
+                "P101-FD-004",
+                "P101-ALLOC-001",
+                "P101-ALLOC-002",
+                "P101-ALLOC-003",
+                "P101-ALLOC-004",
+                "P101-RESOURCE-001",
+                "P101-RESOURCE-002",
+                "P101-RESOURCE-003",
+                "P101-RESOURCE-004",
+                "P101-RESOURCE-007",
+            };
+            static const char *const messages[] = {
+                "descriptor was closed more than once",
+                "descriptor was closed without an observed acquisition",
+                "descriptor would be inherited across exec without CLOEXEC",
+                "allocation is still live at the end of the run",
+                "allocation was freed more than once",
+                "pointer was freed without an observed allocation",
+                "realloc referenced a pointer that was not live",
+                "resource is still live at the end of the run",
+                "resource was released more than once",
+                "resource was released without an observed acquisition",
+                "resource replacement referenced a resource that was not live",
+                "resource was used before acquisition, after release, or after ownership transfer",
+            };
+
+            p101_single_result_ = "resource was acquired while the same identity was already live";
+            for(size_t index = 0U; index < sizeof(identifiers) / sizeof(identifiers[0]); index++)
             {
-                p101_single_result_ = messages[index];
-                break;
+                comparison = strcmp(identifier, identifiers[index]);
+                if(comparison == 0)
+                {
+                    p101_single_result_ = messages[index];
+                    break;
+                }
             }
         }
     }
@@ -988,6 +1025,10 @@ static bool synchronization_class(const char *resource_class)
     int  write_wait;
     int  condition_wait;
     int  join_wait;
+    int  mutex_lifecycle;
+    int  terminal_attempt;
+    int  joinable_thread;
+    int  blocking_operation;
 
     is_held             = held_class(resource_class);
     mutex_wait          = strcmp(resource_class, "pthread-mutex-wait");
@@ -995,17 +1036,19 @@ static bool synchronization_class(const char *resource_class)
     write_wait          = strcmp(resource_class, "pthread-rwlock-write-wait");
     condition_wait      = strcmp(resource_class, "pthread-condition-wait");
     join_wait           = strcmp(resource_class, "pthread-join-wait");
-    p101_single_result_ = (_Bool)((is_held || mutex_wait == 0 || read_wait == 0 || write_wait == 0 || condition_wait == 0 || join_wait == 0) != 0);
+    mutex_lifecycle     = strcmp(resource_class, "pthread-mutex");
+    terminal_attempt    = strcmp(resource_class, "pthread-terminal-attempt");
+    joinable_thread     = strcmp(resource_class, "pthread-joinable-thread");
+    blocking_operation  = strcmp(resource_class, "blocking-operation");
+    p101_single_result_ = (_Bool)((is_held || mutex_wait == 0 || read_wait == 0 || write_wait == 0 || condition_wait == 0 || join_wait == 0 || mutex_lifecycle == 0 || terminal_attempt == 0 || joinable_thread == 0 || blocking_operation == 0) != 0);
     return p101_single_result_;
 }
 
 static void format_sync_thread(char destination[EVIDENCE_TEXT_SIZE], const struct p101_tool_model_node *node)
 {
-    const char *metadata;
-    int         operation_status;
+    int operation_status;
 
-    metadata         = node->metadata == NULL || node->metadata[0] == '\0' ? "thread=?" : node->metadata;
-    operation_status = snprintf(destination, EVIDENCE_TEXT_SIZE, "%ld:%zu:%s", node->pid, node->context_id, metadata);
+    operation_status = snprintf(destination, EVIDENCE_TEXT_SIZE, "%ld:%zu", node->pid, node->context_id);
     (void)operation_status;
 }
 
@@ -1173,7 +1216,55 @@ static int add_sync_finding(struct p101_error *err, struct p101_tool_analysis *a
         }
         else
         {
-            message = "thread join graph contains a cycle";
+            identifier_comparison = strcmp(identifier, "P101-SYNC-003");
+            if(identifier_comparison == 0)
+            {
+                message = "thread join graph contains a cycle";
+            }
+            else
+            {
+                identifier_comparison = strcmp(identifier, "P101-SYNC-004");
+                if(identifier_comparison == 0)
+                {
+                    message = "locks were not released in reverse acquisition order";
+                }
+                else
+                {
+                    identifier_comparison = strcmp(identifier, "P101-SYNC-005");
+                    if(identifier_comparison == 0)
+                    {
+                        message = "a thread join began while a lock was held";
+                    }
+                    else
+                    {
+                        identifier_comparison = strcmp(identifier, "P101-SYNC-007");
+                        if(identifier_comparison == 0)
+                        {
+                            message = "a mutex was destroyed while locked or while a wait was active";
+                        }
+                        else
+                        {
+                            identifier_comparison = strcmp(identifier, "P101-SYNC-008");
+                            if(identifier_comparison == 0)
+                            {
+                                message = "a thread joinable lifetime was consumed more than once";
+                            }
+                            else
+                            {
+                                identifier_comparison = strcmp(identifier, "P101-SYNC-009");
+                                if(identifier_comparison == 0)
+                                {
+                                    message = "one condition variable has concurrent waits using different mutexes";
+                                }
+                                else
+                                {
+                                    message = "a potentially blocking operation began while a lock was held";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     p101_single_result_ = add_finding(err, analysis, identifier, P101_TOOL_ANALYSIS_SYNCHRONIZATION, message, node, from, to, NULL);
@@ -1187,12 +1278,14 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
     int               p101_single_result_;
     struct sync_item *held;
     struct sync_item *waits;
+    struct sync_item *terminated;
     struct sync_edge *lock_edges;
     struct sync_edge *wait_edges;
     struct sync_edge *join_edges;
     size_t            capacity;
     size_t            held_count;
     size_t            wait_count;
+    size_t            terminated_count;
     size_t            lock_edge_count;
     size_t            wait_edge_count;
     size_t            join_edge_count;
@@ -1204,6 +1297,8 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
     held             = (struct sync_item *)allocation;
     allocation       = calloc(capacity, sizeof(*waits));
     waits            = (struct sync_item *)allocation;
+    allocation       = calloc(capacity, sizeof(*terminated));
+    terminated       = (struct sync_item *)allocation;
     allocation       = calloc(capacity, sizeof(*lock_edges));
     lock_edges       = (struct sync_edge *)allocation;
     allocation       = calloc(capacity * 2U, sizeof(*wait_edges));
@@ -1212,11 +1307,12 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
     join_edges       = (struct sync_edge *)allocation;
     held_count       = 0U;
     wait_count       = 0U;
+    terminated_count = 0U;
     lock_edge_count  = 0U;
     wait_edge_count  = 0U;
     join_edge_count  = 0U;
     operation_status = 0;
-    if(held == NULL || waits == NULL || lock_edges == NULL || wait_edges == NULL || join_edges == NULL)
+    if(held == NULL || waits == NULL || terminated == NULL || lock_edges == NULL || wait_edges == NULL || join_edges == NULL)
     {
         P101_ERROR_RAISE_ERRNO(err, ENOMEM);
         operation_status = -1;
@@ -1228,6 +1324,11 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
         bool                               is_sync;
         bool                               is_held;
         bool                               is_join;
+        bool                               is_condition;
+        bool                               is_mutex_lifecycle;
+        bool                               is_terminal_attempt;
+        bool                               is_joinable_thread;
+        bool                               is_blocking_operation;
         int                                class_comparison;
         char                               current_thread[EVIDENCE_TEXT_SIZE];
         char                               current_resource[EVIDENCE_TEXT_SIZE];
@@ -1243,12 +1344,109 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
             continue;
         }
         analysis->synchronization_records++;
-        is_held          = held_class(node->resource_class);
-        class_comparison = strcmp(node->resource_class, "pthread-join-wait");
-        is_join          = class_comparison == 0;
+        is_held               = held_class(node->resource_class);
+        class_comparison      = strcmp(node->resource_class, "pthread-join-wait");
+        is_join               = class_comparison == 0;
+        class_comparison      = strcmp(node->resource_class, "pthread-condition-wait");
+        is_condition          = class_comparison == 0;
+        class_comparison      = strcmp(node->resource_class, "pthread-mutex");
+        is_mutex_lifecycle    = class_comparison == 0;
+        class_comparison      = strcmp(node->resource_class, "pthread-terminal-attempt");
+        is_terminal_attempt   = class_comparison == 0;
+        class_comparison      = strcmp(node->resource_class, "pthread-joinable-thread");
+        is_joinable_thread    = class_comparison == 0;
+        class_comparison      = strcmp(node->resource_class, "blocking-operation");
+        is_blocking_operation = class_comparison == 0;
         format_sync_thread(current_thread, node);
         format_sync_resource(current_resource, node, node->resource_id == NULL ? "?" : node->resource_id);
-        if(is_held && node->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE)
+        if(is_mutex_lifecycle && node->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE)
+        {
+            for(size_t held_index = 0U; held_index < held_count; held_index++)
+            {
+                int resource_comparison;
+
+                resource_comparison = strcmp(held[held_index].resource, current_resource);
+                if(held[held_index].active && resource_comparison == 0)
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-007", node, current_resource, held[held_index].thread);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                }
+            }
+            for(size_t wait_index = 0U; wait_index < wait_count; wait_index++)
+            {
+                int resource_comparison;
+
+                int target_comparison;
+
+                resource_comparison = strcmp(waits[wait_index].resource, current_resource);
+                target_comparison   = strcmp(waits[wait_index].target, current_resource);
+                if(waits[wait_index].active && (resource_comparison == 0 || target_comparison == 0))
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-007", node, current_resource, waits[wait_index].thread);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                }
+            }
+        }
+        else if(is_mutex_lifecycle)
+        {
+            continue;
+        }
+        else if(is_terminal_attempt)
+        {
+            for(size_t terminal_index = 0U; terminal_index < terminated_count; terminal_index++)
+            {
+                int resource_comparison;
+
+                resource_comparison = strcmp(terminated[terminal_index].resource, current_resource);
+                if(terminated[terminal_index].active && resource_comparison == 0)
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-008", node, current_resource, terminated[terminal_index].thread);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                }
+            }
+        }
+        else if(is_joinable_thread && node->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE)
+        {
+            terminated[terminated_count].active = true;
+            terminated[terminated_count].node   = node;
+            snprintf(terminated[terminated_count].thread, EVIDENCE_TEXT_SIZE, "%s", current_thread);
+            snprintf(terminated[terminated_count].resource, EVIDENCE_TEXT_SIZE, "%s", current_resource);
+            terminated_count++;
+        }
+        else if(is_joinable_thread)
+        {
+            continue;
+        }
+        else if(is_blocking_operation)
+        {
+            for(size_t held_index = held_count; held_index > 0U; held_index--)
+            {
+                size_t item;
+                int    thread_comparison;
+
+                item              = held_index - 1U;
+                thread_comparison = strcmp(held[item].thread, current_thread);
+                if(held[item].active && thread_comparison == 0)
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-010", node, held[item].resource, current_resource);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                    break;
+                }
+            }
+        }
+        else if(is_held && node->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE)
         {
             for(size_t held_index = 0U; held_index < held_count; held_index++)
             {
@@ -1283,6 +1481,39 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
         }
         else if(is_held && node->resource_kind == P101_TOOL_EVENT_RESOURCE_RELEASE)
         {
+            size_t top_item;
+            bool   top_found;
+
+            top_item  = 0U;
+            top_found = false;
+            for(size_t held_index = held_count; held_index > 0U; held_index--)
+            {
+                size_t item;
+                int    thread_comparison;
+
+                item              = held_index - 1U;
+                thread_comparison = strcmp(held[item].thread, current_thread);
+                if(held[item].active && thread_comparison == 0)
+                {
+                    top_item  = item;
+                    top_found = true;
+                    break;
+                }
+            }
+            if(top_found)
+            {
+                int resource_comparison;
+
+                resource_comparison = strcmp(held[top_item].resource, current_resource);
+                if(resource_comparison != 0)
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-004", node, held[top_item].resource, current_resource);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                }
+            }
             for(size_t held_index = held_count; held_index > 0U; held_index--)
             {
                 size_t item;
@@ -1301,6 +1532,23 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
         }
         else if(!is_held && node->resource_kind == P101_TOOL_EVENT_RESOURCE_ACQUIRE)
         {
+            for(size_t held_index = is_join ? held_count : 0U; held_index > 0U; held_index--)
+            {
+                size_t item;
+                int    thread_comparison;
+
+                item              = held_index - 1U;
+                thread_comparison = strcmp(held[item].thread, current_thread);
+                if(held[item].active && thread_comparison == 0)
+                {
+                    operation_status = add_sync_finding(err, analysis, "P101-SYNC-005", node, held[item].resource, current_resource);
+                    if(operation_status != 0)
+                    {
+                        goto done;
+                    }
+                    break;
+                }
+            }
             waits[wait_count].active = true;
             waits[wait_count].join   = is_join;
             waits[wait_count].node   = node;
@@ -1314,6 +1562,26 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
             {
                 snprintf(waits[wait_count].thread, EVIDENCE_TEXT_SIZE, "%s", current_thread);
                 snprintf(waits[wait_count].resource, EVIDENCE_TEXT_SIZE, "%s", current_resource);
+                if(is_condition)
+                {
+                    format_sync_resource(waits[wait_count].target, node, node->related_id == NULL ? "?" : node->related_id);
+                    for(size_t prior_index = 0U; prior_index < wait_count; prior_index++)
+                    {
+                        int resource_comparison;
+                        int target_comparison;
+
+                        resource_comparison = strcmp(waits[prior_index].resource, waits[wait_count].resource);
+                        target_comparison   = strcmp(waits[prior_index].target, waits[wait_count].target);
+                        if(waits[prior_index].active && resource_comparison == 0 && target_comparison != 0)
+                        {
+                            operation_status = add_sync_finding(err, analysis, "P101-SYNC-009", node, waits[wait_count].resource, waits[wait_count].target);
+                            if(operation_status != 0)
+                            {
+                                goto done;
+                            }
+                        }
+                    }
+                }
             }
             wait_count++;
         }
@@ -1420,6 +1688,7 @@ static int analyze_synchronization(struct p101_error *err, struct p101_tool_anal
     analysis->lock_order_edges = lock_edge_count;
 
 done:
+    free(terminated);
     free(held);
     free(waits);
     free(lock_edges);
